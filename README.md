@@ -174,10 +174,10 @@ claro no volume. [docs/security.md](docs/security.md) explica o resto.
   vence sempre; a imagem só adiciona arquivos que ainda não existem.
 - **Configuração do Herdr**: `image/skel/.config/herdr/config.toml`
   (`herdr --default-config` lista todas as opções).
-- **Banner de boas-vindas**: `AGENTBOX_BANNER` no `.env` — `login` (padrão),
-  `always` (em todo pane do Herdr) ou `off`; `AGENTBOX_BANNER_BY` troca a
-  assinatura. O desenho tem três tamanhos e escolhe sozinho o que cabe na
-  largura do terminal.
+- **Banner de boas-vindas**: `AGENTBOX_BANNER` no `.env` — `always` (padrão,
+  em todo terminal e em cada pane do Herdr), `login` (só ao conectar) ou `off`;
+  `AGENTBOX_BANNER_BY` troca a assinatura. O desenho tem três tamanhos e
+  escolhe sozinho o que cabe na largura do terminal.
 - **Mais ferramentas na imagem**: edite o `Dockerfile` e rode `make update`.
 - **Mais ferramentas sem rebuild**: `~/.agentbox/provision.sh`.
 - **Versões fixas**: `NODE_VERSION`, `NVIM_VERSION`, `CLAUDE_CODE_VERSION`,

@@ -1,21 +1,24 @@
 # Sourced from /etc/bash.bashrc for interactive shells.
 #
 # AGENTBOX_BANNER decides where the wordmark shows up:
-#   login   (default) only the shell you land in over SSH
-#   always  every interactive shell, including each herdr pane
+#   always  (default) every interactive shell, including each herdr pane
+#   login   only the shell you land in over SSH
 #   off     never
 case $- in
     *i*) ;;
     *) return 0 ;;
 esac
 
-case "${AGENTBOX_BANNER:-login}" in
+case "${AGENTBOX_BANNER:-always}" in
     off|0|no|false) return 0 ;;
-    always) ;;
-    *) shopt -q login_shell 2>/dev/null || return 0 ;;
+    login) shopt -q login_shell 2>/dev/null || return 0 ;;
 esac
 
 agentbox-banner
+
+# Everything below belongs to the shell you land in over SSH. A herdr pane
+# gets the wordmark and nothing else — you already know where you are.
+shopt -q login_shell 2>/dev/null || return 0
 
 # The summary is 10 lines. On a phone that is half the screen on top of the
 # wordmark, so only wide-and-tall terminals get it.

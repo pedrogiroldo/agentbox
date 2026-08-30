@@ -40,15 +40,16 @@ line. Never copy a private key between devices.
 
 ## 3. The banner
 
-Logging in prints the agentbox wordmark. It comes in three sizes and picks by
-terminal width, so a phone gets the compact one instead of six wrapped lines of
-confetti. `AGENTBOX_BANNER=always` shows it in every herdr pane too,
-`AGENTBOX_BANNER=off` never shows it, and `AGENTBOX_BANNER_BY` sets the line
-underneath.
+Every terminal you open prints the agentbox wordmark — the SSH login and each
+herdr pane. It comes in three sizes and picks by terminal width, so a phone
+gets the compact one instead of six wrapped lines of confetti.
+`AGENTBOX_BANNER=login` limits it to the SSH login, `off` turns it off, and
+`AGENTBOX_BANNER_BY` sets the line underneath.
 
-The one-screen summary that follows the wordmark (versions, paths) only appears
-on terminals at least 70 columns wide and 26 rows tall — on a phone the banner
-plus a `run herdr to start` line is all you get, on purpose.
+Only the SSH login gets more than the wordmark: a one-screen summary of
+versions and paths, and even that needs a terminal at least 70 columns wide and
+26 rows tall. On a phone you get the banner plus a `run herdr to start` line,
+and a herdr pane gets the banner alone.
 
 ## 4. Herdr in one minute
 
