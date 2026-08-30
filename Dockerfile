@@ -214,7 +214,7 @@ EXPOSE 22
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD nc -z 127.0.0.1 22 || exit 1
 
-# -g: forward signals to the whole process group, so a shutdown reaches the
-# background saver and it gets to write your last changes out.
-ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/agentbox-entrypoint"]
+# No -g on purpose: a group-wide TERM kills sshd and ends the container before
+# the entrypoint can write out your last changes. It handles the sequence.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/agentbox-entrypoint"]
 CMD ["/usr/sbin/sshd", "-D", "-e"]

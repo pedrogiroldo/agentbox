@@ -54,7 +54,7 @@ boot
 pass "booted"
 
 step "installing things the way you would"
-in_box 'apt-get update -qq && apt-get install -y -qq sl' >/dev/null
+in_box 'apt-get update -qq && apt-get install -y -qq whois' >/dev/null
 in_box 'printf "#!/bin/sh\necho hello\n" > /usr/local/bin/hello && chmod +x /usr/local/bin/hello'
 in_box 'echo "answer = 42" > /etc/agentbox-test.conf'
 in_box 'agentbox-persist save' >/dev/null
@@ -71,11 +71,11 @@ in_box 'grep -q "answer = 42" /etc/agentbox-test.conf' && pass "/etc/agentbox-te
 
 # The package replay runs in the background, after sshd is up.
 for _ in $(seq 90); do
-    in_box 'dpkg-query -W -f="\${Status}" sl 2>/dev/null | grep -q "ok installed"' && break
+    in_box 'dpkg-query -W -f="\${Status}" whois 2>/dev/null | grep -q "ok installed"' && break
     sleep 1
 done
-in_box 'command -v sl >/dev/null' && pass "apt package 'sl' reinstalled" || {
-    fail "apt package 'sl' did not come back"
+in_box 'command -v whois >/dev/null' && pass "apt package 'whois' reinstalled" || {
+    fail "apt package 'whois' did not come back"
     docker exec "$NAME" cat /var/lib/agentbox/log/replay.log 2>/dev/null | tail -20
 }
 
@@ -94,7 +94,10 @@ in_box 'printf "#!/bin/sh\necho bye\n" > /usr/local/bin/bye && chmod +x /usr/loc
 docker stop "$NAME" >/dev/null          # SIGTERM -> tini -g -> the saver's trap
 docker rm -f "$NAME" >/dev/null
 boot 300
-in_box 'test -x /usr/local/bin/bye' && pass "shutdown save" || fail "shutdown did not save"
+in_box 'test -x /usr/local/bin/bye' && pass "shutdown save" || {
+    fail "a graceful stop did not save"
+    docker logs "$NAME" 2>&1 | grep -i persist | tail -5
+}
 
 step "fresh start forgets everything"
 in_box 'agentbox-persist reset' >/dev/null

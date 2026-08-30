@@ -264,18 +264,17 @@ cmd_reset() {
     log "state cleared — the next recreate boots the plain image"
 }
 
-# Periodic save, started by the entrypoint. The trap is what makes a graceful
-# `docker compose down` keep the last five minutes of work.
+# Periodic save, started by the entrypoint. Shutdown is not this loop's job:
+# the entrypoint runs a final save itself, in a place where the container is
+# guaranteed to still be alive.
 cmd_watch() {
     need_root watch
     enabled || return 0
     local interval="${AGENTBOX_PERSIST_INTERVAL:-300}"
     [ "$interval" -gt 0 ] 2>/dev/null || return 0
 
-    trap 'cmd_save >>"$LOG_DIR/persist.log" 2>&1; exit 0' TERM INT
     while true; do
-        sleep "$interval" &
-        wait $!
+        sleep "$interval"
         cmd_save >>"$LOG_DIR/persist.log" 2>&1
     done
 }

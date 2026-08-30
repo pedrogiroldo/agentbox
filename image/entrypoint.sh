@@ -255,16 +255,38 @@ fi
     fi
 ) &
 
-# Keep capturing what you install from here on. tini -g forwards the shutdown
-# signal to this too, so a graceful stop saves whatever came after the last pass.
+# Keep capturing what you install from here on. The shutdown save is handled
+# below, by this script, so this is only the periodic pass.
 if [ "${AGENTBOX_PERSIST:-1}" != "0" ] && [ "${AGENTBOX_PERSIST_INTERVAL:-300}" != "0" ]; then
     agentbox-persist watch &
 fi
 
 # ---------------------------------------------------------------------------
 # 11. Hand over to sshd
+#
+# Deliberately not `exec`: the box has one last job when it is told to stop --
+# writing out what you installed since the last save. The container lives as
+# long as this script does, so staying around as sshd's parent is what buys the
+# time for it (stop_grace_period, 30s by default).
 # ---------------------------------------------------------------------------
 mkdir -p /run/sshd
 /usr/sbin/sshd -t -f /etc/ssh/sshd_config || die "sshd configuration is invalid"
 log "ready — sshd is listening on port 22 (log in as $USER_NAME)"
-exec "$@"
+
+"$@" &
+sshd_pid=$!
+
+on_shutdown() {
+    trap '' TERM INT
+    kill -TERM "$sshd_pid" 2>/dev/null || true
+    if [ "${AGENTBOX_PERSIST:-1}" != "0" ]; then
+        log "saving what changed since the last pass"
+        agentbox-persist save || warn "the final save did not finish"
+    fi
+    wait "$sshd_pid" 2>/dev/null || true
+    exit 0
+}
+trap on_shutdown TERM INT
+
+wait "$sshd_pid" || sshd_status=$?
+exit "${sshd_status:-0}"
