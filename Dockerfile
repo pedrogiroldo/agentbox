@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ripgrep fd-find fzf jq less nano tree htop procps psmisc lsof strace \
         python3 python3-venv \
         rsync socat netcat-openbsd iputils-ping dnsutils net-tools \
-        bash-completion man-db mosh tmux \
+        bash-completion man-db mosh tmux ncurses-term \
         libssl-dev zlib1g-dev \
     && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
     && sed -i -e '/^# *en_US.UTF-8 UTF-8/s/^# *//' -e '/^# *pt_BR.UTF-8 UTF-8/s/^# *//' /etc/locale.gen \
@@ -49,6 +49,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
+
+# Terminal emulators ship their own terminfo and SSH hands us that TERM name;
+# without an entry every ncurses program dies with "unknown terminal type".
+# ncurses-term covers alacritty/wezterm/foot/rio/tmux-256color. kitty is in
+# there as `kitty`, but what kitty actually exports is `xterm-kitty`, so alias
+# the one onto the other. Anything still missing (ghostty) falls back to
+# xterm-256color in /etc/agentbox/env.sh.
+RUN infocmp kitty | sed 's/^kitty|/xterm-kitty|kitty|/' | tic -x -o /usr/share/terminfo -
 
 # GitHub CLI (official apt repository)
 RUN install -m 0755 -d /etc/apt/keyrings \

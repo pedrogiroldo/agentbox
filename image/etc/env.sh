@@ -14,6 +14,25 @@ case ":${PATH}:" in
 esac
 export PATH
 
+# SSH forwards the client's TERM verbatim, and terminals that ship their own
+# terminfo (ghostty, a kitty newer than the image's entry) name something the
+# box has never heard of -- every ncurses program then dies with "unknown
+# terminal type". Look the name up by hand instead of shelling out to infocmp:
+# this file runs for every shell, herdr panes included.
+if [ -n "${TERM:-}" ] && [ "${TERM}" != "dumb" ]; then
+    _agentbox_initial=${TERM%"${TERM#?}"}
+    _agentbox_terminfo=""
+    for _agentbox_dir in ${TERMINFO:+"${TERMINFO}"} "${HOME}/.terminfo" \
+                         /etc/terminfo /lib/terminfo /usr/share/terminfo; do
+        if [ -e "${_agentbox_dir}/${_agentbox_initial}/${TERM}" ]; then
+            _agentbox_terminfo=1
+            break
+        fi
+    done
+    [ -n "${_agentbox_terminfo}" ] || export TERM=xterm-256color
+    unset _agentbox_initial _agentbox_terminfo _agentbox_dir
+fi
+
 # Neovim reads this to enable 24-bit color over SSH/mosh.
 export COLORTERM="${COLORTERM:-truecolor}"
 export EDITOR="${EDITOR:-nvim}"
