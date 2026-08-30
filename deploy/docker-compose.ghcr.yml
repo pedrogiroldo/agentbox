@@ -26,6 +26,10 @@ services:
 
     volumes:
       - agentbox-home:/home/dev
+      # apt packages and edits outside the home, replayed on every boot.
+      # Deleting both volumes is what "start over" means.
+      - agentbox-state:/var/lib/agentbox
 
 volumes:
   agentbox-home:
+  agentbox-state:

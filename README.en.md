@@ -129,19 +129,22 @@ The full walkthrough, including the client settings that matter, is in
 
 ## Your data stays on your server
 
-One line covers it:
+Two volumes cover it:
 
-> **`/home/dev` is a volume on your server. Everything else is the image.**
+> **`/home/dev` is yours** — repositories, agent credentials, Neovim config and
+> plugins, shell history, Herdr sessions and even the SSH host keys live in the
+> `agentbox-home` volume. Recreating the container loses nothing, not even the
+> fingerprint your phone already trusted.
+>
+> **What you install on top of the image is remembered and replayed.** A
+> `sudo apt install postgresql-client`, a binary in `/usr/local/bin`, an edited
+> file in `/etc`: recorded into the `agentbox-state` volume and put back on the
+> next boot.
 
-Repositories, agent credentials, Neovim config and plugins, shell history,
-Herdr sessions and even the SSH host keys live in the `agentbox-home` volume.
-Recreating the container loses nothing — not even the fingerprint your phone
-already trusted.
-
-Anything outside the home (a `sudo apt install`, say) is gone on the next
-recreate. To keep it, put it in `~/.agentbox/provision.sh`, which runs on every
-boot, or in the `Dockerfile` if it is heavy. See
-[docs/persistence.md](docs/persistence.md).
+No volume is ever mounted over the image, so updating agentbox still brings you
+a newer node, nvim, herdr and agents. `agentbox-persist status` shows what is
+being kept; starting over means deleting both volumes (`make destroy`). Details
+and backups in [docs/persistence.md](docs/persistence.md).
 
 ## Running it on Coolify or Dokploy
 

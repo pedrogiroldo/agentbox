@@ -158,12 +158,13 @@ COPY image/etc/sshd_config /etc/ssh/sshd_config
 COPY image/etc/make-motd.sh /usr/local/bin/agentbox-make-motd
 COPY image/etc/banner.sh /usr/local/bin/agentbox-banner
 COPY image/etc/greet.sh /etc/agentbox/greet.sh
+COPY image/etc/persist.sh /usr/local/bin/agentbox-persist
 COPY image/entrypoint.sh /usr/local/bin/agentbox-entrypoint
 COPY image/skel/ /opt/agentbox/skel/
 
 RUN set -eux; \
     chmod +x /usr/local/bin/agentbox-entrypoint /usr/local/bin/agentbox-make-motd \
-        /usr/local/bin/agentbox-banner; \
+        /usr/local/bin/agentbox-banner /usr/local/bin/agentbox-persist; \
     # /etc/agentbox/greet.sh prints the banner and the motd, in that order.
     # PAM would print the motd first (plus Ubuntu's motd-news noise), so mute it.
     sed -i 's/^session\s*optional\s*pam_motd/# &/' /etc/pam.d/sshd; \
@@ -184,10 +185,36 @@ RUN if [ "$PREINSTALL_NVIM_PLUGINS" = "true" ]; then \
         || echo ">> warning: Neovim plugin pre-install failed; plugins will install on first run"; \
     fi
 
+# ---------------------------------------------------------------------------
+# Persistence contract (see docs/persistence.md)
+#
+# Two records the runtime diffs against, both written *last* so they describe
+# the finished image:
+#   apt-baseline  the packages this image ships. Anything marked manual on top
+#                 of it is yours, and agentbox-persist reinstalls it on boot.
+#   build-stamp   the moment the image was sealed. Every file newer than this
+#                 was put there by you, and gets copied into the state volume.
+#
+# The apt drop-ins move the .deb cache and the package lists into that volume,
+# so replaying your packages after a recreate is usually offline and instant.
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    install -d -m 0755 /usr/share/agentbox /var/lib/agentbox; \
+    apt-mark showmanual | LC_ALL=C sort > /usr/share/agentbox/apt-baseline; \
+    printf 'Dir::Cache::archives "/var/lib/agentbox/apt/archives/";\n\
+Dir::State::lists "/var/lib/agentbox/apt/lists/";\n\
+Binary::apt::APT::Keep-Downloaded-Packages "true";\n' \
+        > /etc/apt/apt.conf.d/99-agentbox-cache; \
+    printf 'DPkg::Post-Invoke { "/usr/local/bin/agentbox-persist record-apt >/dev/null 2>&1 || true"; };\n' \
+        > /etc/apt/apt.conf.d/99-agentbox-record; \
+    touch /usr/share/agentbox/build-stamp
+
 EXPOSE 22
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD nc -z 127.0.0.1 22 || exit 1
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/agentbox-entrypoint"]
+# -g: forward signals to the whole process group, so a shutdown reaches the
+# background saver and it gets to write your last changes out.
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/agentbox-entrypoint"]
 CMD ["/usr/sbin/sshd", "-D", "-e"]

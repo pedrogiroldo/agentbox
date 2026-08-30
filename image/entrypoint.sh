@@ -46,7 +46,30 @@ as_user() {
 }
 
 # The image ships sshd_config pointing at /home/dev; follow the real home.
-sed -i "s#^HostKey /home/[^/]*/\.agentbox#HostKey ${STATE_DIR}#" /etc/ssh/sshd_config
+# Only when it actually differs: an unconditional sed -i would touch the file
+# on every boot, and agentbox-persist would then treat it as one of your edits.
+if ! grep -q "^HostKey ${STATE_DIR}/" /etc/ssh/sshd_config; then
+    sed -i "s#^HostKey /home/[^/]*/\.agentbox#HostKey ${STATE_DIR}#" /etc/ssh/sshd_config
+fi
+
+# ---------------------------------------------------------------------------
+# 1b. Persistent system layer
+#
+# /home/dev is not the only thing you change: packages, /usr/local, /opt and
+# /etc matter too. They are not volumes -- mounting over them would freeze the
+# node, nvim, herdr and agents the image ships. Instead the state volume keeps
+# the *delta* and we lay it back down here, before anything else reads /etc.
+# See docs/persistence.md; `agentbox-persist status` shows what is kept.
+# ---------------------------------------------------------------------------
+PERSIST_DIR="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}"
+install -d -m 0755 "$PERSIST_DIR" "$PERSIST_DIR/overlay" "$PERSIST_DIR/log" \
+    "$PERSIST_DIR/apt/archives/partial" "$PERSIST_DIR/apt/lists/partial"
+
+if [ "${AGENTBOX_PERSIST:-1}" != "0" ]; then
+    agentbox-persist restore || warn "could not restore the persistent layer"
+else
+    log "persistence is off (AGENTBOX_PERSIST=0): only /home/dev survives"
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Timezone
@@ -205,20 +228,37 @@ if [ "${AGENTBOX_HERDR_INTEGRATIONS:-1}" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 10. Your own provisioning script, in the background
+# 10. Bring your world back: packages, then your provisioning script
+#
+# Both run in one background chain so they never fight over the dpkg lock, and
+# in this order because a provision script usually assumes its packages exist.
 # ---------------------------------------------------------------------------
 provision="$STATE_DIR/provision.sh"
+
 if [ -f "$provision" ]; then
     log "running $provision in the background (log: $STATE_DIR/provision.log)"
     touch "$STATE_DIR/provision.log"
     chown "$OWNER" "$STATE_DIR/provision.log"
-    (
+fi
+
+(
+    if [ "${AGENTBOX_PERSIST:-1}" != "0" ]; then
+        agentbox-persist replay-apt 2>&1 | tee -a "$PERSIST_DIR/log/replay.log"
+    fi
+
+    if [ -f "$provision" ]; then
         {
             echo "=== $(date -Is) provision start ==="
             as_user bash "$provision" 2>&1 || echo "!!! provision exited with an error"
             echo "=== $(date -Is) provision finished ==="
         } | tee -a "$STATE_DIR/provision.log"
-    ) &
+    fi
+) &
+
+# Keep capturing what you install from here on. tini -g forwards the shutdown
+# signal to this too, so a graceful stop saves whatever came after the last pass.
+if [ "${AGENTBOX_PERSIST:-1}" != "0" ] && [ "${AGENTBOX_PERSIST_INTERVAL:-300}" != "0" ]; then
+    agentbox-persist watch &
 fi
 
 # ---------------------------------------------------------------------------

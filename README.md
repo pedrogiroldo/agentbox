@@ -130,19 +130,22 @@ está em [docs/mobile.md](docs/mobile.md).
 
 ## Seus dados ficam no seu servidor
 
-A regra é uma linha:
+São dois volumes:
 
-> **`/home/dev` é um volume no seu servidor. Todo o resto é a imagem.**
+> **`/home/dev` é seu** — repositórios, credenciais dos agentes, configuração
+> do Neovim, plugins, histórico do shell, sessões do Herdr e até as chaves de
+> host do SSH ficam no volume `agentbox-home`. Recriar o container não perde
+> nada — nem o *fingerprint* que o seu celular já confiou.
+>
+> **O que você instala por cima da imagem é lembrado e reaplicado.** Um
+> `sudo apt install postgresql-client`, um binário em `/usr/local/bin`, um
+> arquivo editado em `/etc`: tudo isso é registrado no volume `agentbox-state`
+> e volta no próximo boot.
 
-Repositórios, credenciais dos agentes, configuração do Neovim, plugins,
-histórico do shell, sessões do Herdr e até as chaves de host do SSH ficam no
-volume `agentbox-home`. Recriar o container não perde nada — nem o
-*fingerprint* que o seu celular já confiou.
-
-Coisas fora do home (um `sudo apt install`, por exemplo) somem quando o
-container é recriado. Para que sobrevivam, coloque-as em
-`~/.agentbox/provision.sh`, que roda em todo boot, ou no `Dockerfile`, se for
-algo pesado. Detalhes e estratégia de backup em
+A imagem nunca é sobreposta por um volume, então atualizar o agentbox continua
+trazendo node, nvim, herdr e agentes novos. `agentbox-persist status` mostra o
+que está sendo mantido; recomeçar do zero é apagar os dois volumes
+(`make destroy`). Detalhes e backup em
 [docs/persistence.md](docs/persistence.md).
 
 ## Rodando em Coolify ou Dokploy

@@ -10,7 +10,9 @@ SSH_PORT ?= $(or $(call env_value,SSH_PORT),2222)
 SSH_HOST ?= localhost
 SSH_USER ?= dev
 VOLUME   ?= $(or $(call env_value,AGENTBOX_VOLUME),agentbox-home)
+STATE    ?= $(or $(call env_value,AGENTBOX_STATE_VOLUME),agentbox-state)
 SERVICE  ?= agentbox
+IMAGE    ?= $(or $(call env_value,AGENTBOX_IMAGE),agentbox:local)
 
 .DEFAULT_GOAL := help
 
@@ -19,7 +21,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "  ssh port: $(SSH_PORT)   volume: $(VOLUME)"
+	@echo "  ssh port: $(SSH_PORT)   volumes: $(VOLUME), $(STATE)"
 
 key: ## Print this machine's SSH public key (creates one if missing)
 	@if ! ls ~/.ssh/id_*.pub >/dev/null 2>&1; then \
@@ -47,7 +49,7 @@ hint:
 	@echo "connect with:  ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST)"
 	@echo "then run:      herdr"
 
-down: ## Stop the box (the volume, and everything in it, stays)
+down: ## Stop the box (both volumes, and everything in them, stay)
 	$(COMPOSE) down
 
 restart: ## Restart the box
@@ -68,19 +70,23 @@ shell: ## Open a shell inside the box without SSH (rescue hatch)
 root: ## Open a root shell inside the box
 	$(COMPOSE) exec -u root $(SERVICE) bash -l
 
-update: ## Rebuild with the latest agent versions and recreate (volume is kept)
+update: ## Rebuild with the latest agents and recreate (volumes are kept)
 	$(COMPOSE) build --pull --build-arg AGENTS_CACHEBUST=$$(date +%Y%m%d%H%M)
 	$(COMPOSE) up -d --force-recreate
 	@$(MAKE) --no-print-directory hint
 
-backup: ## Tar the home volume into ./backups
+backup: ## Tar both volumes into ./backups
 	@mkdir -p backups
-	@out="backups/$(VOLUME)-$$(date +%Y%m%d-%H%M%S).tar.gz"; \
-	  docker run --rm -v $(VOLUME):/data:ro -v "$$PWD/backups:/backup" \
-	    ubuntu:24.04 tar czf "/backup/$$(basename $$out)" -C /data . ; \
-	  echo "wrote $$out"
+	@stamp="$$(date +%Y%m%d-%H%M%S)"; \
+	  for vol in $(VOLUME) $(STATE); do \
+	    docker volume inspect "$$vol" >/dev/null 2>&1 || continue; \
+	    out="backups/$$vol-$$stamp.tar.gz"; \
+	    docker run --rm -v "$$vol":/data:ro -v "$$PWD/backups:/backup" \
+	      ubuntu:24.04 tar czf "/backup/$$(basename $$out)" -C /data . ; \
+	    echo "wrote $$out"; \
+	  done
 
-restore: ## Restore a backup: make restore FILE=backups/xxx.tar.gz
+restore: ## Restore a backup: make restore FILE=... [VOLUME=agentbox-state]
 	@test -n "$(FILE)" || { echo "usage: make restore FILE=backups/xxx.tar.gz"; exit 1; }
 	@test -f "$(FILE)" || { echo "no such file: $(FILE)"; exit 1; }
 	$(COMPOSE) down
@@ -88,10 +94,18 @@ restore: ## Restore a backup: make restore FILE=backups/xxx.tar.gz
 	  ubuntu:24.04 tar xzf "/backup/$$(basename $(FILE))" -C /data
 	$(COMPOSE) up -d
 
-destroy: ## Delete the container AND the home volume (irreversible)
-	@echo "This deletes the volume '$(VOLUME)' and everything in it."
+test: build ## Boot the image and check that persistence really works
+	tests/persistence.sh $(IMAGE)
+
+persist: ## Show what survives a recreate (packages and files kept)
+	$(COMPOSE) exec $(SERVICE) agentbox-persist status
+
+destroy: ## Delete the container AND both volumes — the fresh start (irreversible)
+	@echo "This deletes '$(VOLUME)' (your home) and '$(STATE)' (packages and"
+	@echo "system changes), and everything in them. The box comes back as a"
+	@echo "plain image."
 	@read -r -p "Type the volume name to confirm: " answer; \
 	  [ "$$answer" = "$(VOLUME)" ] || { echo "aborted"; exit 1; }
 	$(COMPOSE) down -v
 
-.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore destroy
+.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test persist destroy

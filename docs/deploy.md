@@ -42,8 +42,17 @@ machine.
 5. Deploy, then check the logs. A healthy boot ends with
    `[agentbox] ready — sshd is listening on port 22`.
 
-The named volume `agentbox-home` is what you back up; both platforms let you
-see and snapshot it.
+Two named volumes come with it: `agentbox-home` (your repos, credentials and
+config) and `agentbox-state` (the packages you install and the files you change
+outside the home). Both platforms let you see and snapshot them; deleting both
+is what "start over" means. See [persistence.md](persistence.md).
+
+### Updating a deployed box
+
+Pulling a newer image is safe: neither volume is ever mounted over the image,
+so an update brings you newer tooling while your packages and files are
+replayed on top. In Coolify, enable *Pull latest image on deploy* (or pin an
+immutable `:sha-xxxxxxx` tag) so the redeploy actually fetches it.
 
 ### Building on the server vs. pulling an image
 

@@ -43,6 +43,12 @@ services:
       AGENTBOX_BANNER: ${AGENTBOX_BANNER:-always}
       AGENTBOX_BANNER_BY: ${AGENTBOX_BANNER_BY:-}
       AGENTBOX_HERDR_INTEGRATIONS: ${AGENTBOX_HERDR_INTEGRATIONS:-1}
+      # --- persistence beyond the home ---
+      # apt installs and edits to /usr/local, /opt and /etc are recorded and
+      # replayed on boot. 0 turns that off (only /home/dev survives then).
+      AGENTBOX_PERSIST: ${AGENTBOX_PERSIST:-1}
+      # Seconds between automatic saves; a graceful stop always saves too.
+      AGENTBOX_PERSIST_INTERVAL: ${AGENTBOX_PERSIST_INTERVAL:-300}
       # Set to "force" once to restore the config files shipped in the image.
       AGENTBOX_RESEED: ${AGENTBOX_RESEED:-}
       # Only needed when /home/dev is a bind mount and uids must match the host.
@@ -53,6 +59,9 @@ services:
       # Everything you care about lives here: repos, agent credentials, shell
       # history, Neovim state, herdr sessions, SSH host keys.
       - agentbox-home:/home/dev
+      # The system layer: your apt packages (list + .deb cache) and the files
+      # you changed outside the home. Wipe both volumes for a fresh start.
+      - agentbox-state:/var/lib/agentbox
       # Optional: talk to the host's Docker daemon from inside the box.
       # This is root-equivalent access to the host — read docs/security.md.
       # - /var/run/docker.sock:/var/run/docker.sock
@@ -68,3 +77,5 @@ services:
 volumes:
   agentbox-home:
     name: ${AGENTBOX_VOLUME:-agentbox-home}
+  agentbox-state:
+    name: ${AGENTBOX_STATE_VOLUME:-agentbox-state}

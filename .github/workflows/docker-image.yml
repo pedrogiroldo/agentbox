@@ -53,3 +53,17 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Persistence is the one behaviour a build cannot prove: it only shows up
+      # when a container is thrown away and a new one boots on the same volumes.
+      - name: Load the image into the local daemon
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: agentbox:test
+          cache-from: type=gha
+
+      - name: Persistence smoke test
+        run: tests/persistence.sh agentbox:test
