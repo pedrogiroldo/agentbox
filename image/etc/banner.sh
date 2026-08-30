@@ -4,18 +4,48 @@
 # A phone gets 40-ish columns; the full block letters are 69 wide and would
 # wrap into confetti. So there are three sizes and the narrowest one still
 # fits a watch. Signature text comes from AGENTBOX_BANNER_BY.
+#
+# The sizes are picked with room to spare, not with a ruler. 69 columns of
+# block letters technically fit an 80-column terminal, but 80 columns on a
+# phone is a tiny font on a four-inch screen, and it is also what a client
+# that never measured anything reports out of habit. A terminal that is
+# genuinely wide says far more than 80, so that is where the big one starts.
 
 by="${AGENTBOX_BANNER_BY:-by Pedro Giroldo}"
 
-cols="${COLUMNS:-}"
-if [ -z "$cols" ]; then
-    if [ -t 1 ]; then
-        cols=$(tput cols 2>/dev/null || echo 80)
-    else
-        cols=80
-    fi
+# How wide is this terminal? Ask everyone who might know, in order of how
+# likely they are to be right:
+#
+#   AGENTBOX_BANNER_COLS  a straight answer, for testing and for stubborn cases
+#   COLUMNS               the shell's own count — greet.sh hands us its copy,
+#                         since bash keeps COLUMNS to itself and never exports it
+#   stty size             the tty driver, which was told by the kernel
+#   tput cols             terminfo, which first needs a TERM the box recognises
+#
+# Every one of these can come back empty or as garbage, so nothing is trusted
+# until it has proven to be a plain positive number.
+cols=""
+for candidate in "${AGENTBOX_BANNER_COLS:-}" "${COLUMNS:-}"; do
+    case "$candidate" in
+        ''|*[!0-9]*) ;;
+        *) [ "$candidate" -gt 0 ] && { cols="$candidate"; break; } ;;
+    esac
+done
+
+if [ -z "$cols" ] && [ -t 1 ]; then
+    cols=$(stty size 2>/dev/null </dev/tty | cut -d' ' -f2)
+    case "$cols" in ''|*[!0-9]*|0) cols=$(tput cols 2>/dev/null) ;; esac
+    case "$cols" in ''|*[!0-9]*|0) cols="" ;; esac
 fi
-[ "$cols" -gt 0 ] 2>/dev/null || cols=80
+
+# Still nothing. A terminal that will not say how wide it is is far more often
+# a phone than a workstation, and a wordmark that came out too small is a
+# much smaller insult than six wrapped lines of confetti on a 40-column screen.
+# Output that is not a terminal at all (a pipe, a log) has no width to respect,
+# so that one gets the full-size letters.
+if [ -z "$cols" ]; then
+    if [ -t 1 ]; then cols=40; else cols=80; fi
+fi
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
     c_art=$(printf '\033[38;5;39m')      # blue
@@ -25,7 +55,7 @@ else
     c_art=''; c_by=''; c_off=''
 fi
 
-if [ "$cols" -ge 72 ]; then
+if [ "$cols" -ge 90 ]; then
     art_width=69
     art=$(cat <<'ART'
  █████╗  ██████╗ ███████╗███╗   ██╗████████╗██████╗  ██████╗ ██╗  ██╗

@@ -178,7 +178,8 @@ in plaintext. [docs/security.md](docs/security.md) has the rest.
 - **Welcome banner**: `AGENTBOX_BANNER` in `.env` — `always` (default: every
   terminal and every herdr pane), `login` (only when you connect) or `off`;
   `AGENTBOX_BANNER_BY` changes the signature. The wordmark has three sizes and
-  picks the one that fits.
+  picks the one that fits — the big block letters need 90 columns, so a phone
+  never gets a screenful of them.
 - **More tools in the image**: edit the `Dockerfile`, run `make update`.
 - **More tools without a rebuild**: `~/.agentbox/provision.sh`.
 - **Pinned versions**: `NODE_VERSION`, `NVIM_VERSION`, `CLAUDE_CODE_VERSION`,

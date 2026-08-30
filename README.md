@@ -181,7 +181,8 @@ claro no volume. [docs/security.md](docs/security.md) explica o resto.
 - **Banner de boas-vindas**: `AGENTBOX_BANNER` no `.env` — `always` (padrão,
   em todo terminal e em cada pane do Herdr), `login` (só ao conectar) ou `off`;
   `AGENTBOX_BANNER_BY` troca a assinatura. O desenho tem três tamanhos e
-  escolhe sozinho o que cabe na largura do terminal.
+  escolhe sozinho o que cabe na largura do terminal — as letras grandes só
+  aparecem a partir de 90 colunas, para não encher a tela de um celular.
 - **Mais ferramentas na imagem**: edite o `Dockerfile` e rode `make update`.
 - **Mais ferramentas sem rebuild**: `~/.agentbox/provision.sh`.
 - **Versões fixas**: `NODE_VERSION`, `NVIM_VERSION`, `CLAUDE_CODE_VERSION`,

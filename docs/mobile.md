@@ -46,6 +46,16 @@ gets the compact one instead of six wrapped lines of confetti.
 `AGENTBOX_BANNER=login` limits it to the SSH login, `off` turns it off, and
 `AGENTBOX_BANNER_BY` sets the line underneath.
 
+The full block letters need 90 columns. They are only 69 wide, but 80 columns
+on a phone means a font too small to read, and 80 is also what a client that
+never measured its window reports out of habit — so the big one is reserved
+for terminals that are genuinely wide. Check what yours claims with
+`tput cols`, and try any width without resizing anything:
+
+```sh
+AGENTBOX_BANNER_COLS=45 agentbox-banner
+```
+
 Only the SSH login gets more than the wordmark: a one-screen summary of
 versions and paths, and even that needs a terminal at least 70 columns wide and
 26 rows tall. On a phone you get the banner plus a `run herdr to start` line,
