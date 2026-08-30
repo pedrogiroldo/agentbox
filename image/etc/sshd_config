@@ -36,6 +36,7 @@ ClientAliveInterval 30
 ClientAliveCountMax 6
 TCPKeepAlive yes
 
-PrintMotd yes
+# The motd is printed by /etc/agentbox/greet.sh, after the banner.
+PrintMotd no
 AcceptEnv LANG LC_* TERM COLORTERM
 Subsystem sftp /usr/lib/openssh/sftp-server

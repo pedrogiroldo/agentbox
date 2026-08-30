@@ -148,19 +148,22 @@ RUN set -eux; \
 COPY image/etc/env.sh /etc/agentbox/env.sh
 COPY image/etc/sshd_config /etc/ssh/sshd_config
 COPY image/etc/make-motd.sh /usr/local/bin/agentbox-make-motd
+COPY image/etc/banner.sh /usr/local/bin/agentbox-banner
+COPY image/etc/greet.sh /etc/agentbox/greet.sh
 COPY image/entrypoint.sh /usr/local/bin/agentbox-entrypoint
 COPY image/skel/ /opt/agentbox/skel/
 
 RUN set -eux; \
-    chmod +x /usr/local/bin/agentbox-entrypoint /usr/local/bin/agentbox-make-motd; \
-    # sshd prints /etc/motd itself; without this PAM prints it a second time
-    # and adds Ubuntu's motd-news noise on top.
+    chmod +x /usr/local/bin/agentbox-entrypoint /usr/local/bin/agentbox-make-motd \
+        /usr/local/bin/agentbox-banner; \
+    # /etc/agentbox/greet.sh prints the banner and the motd, in that order.
+    # PAM would print the motd first (plus Ubuntu's motd-news noise), so mute it.
     sed -i 's/^session\s*optional\s*pam_motd/# &/' /etc/pam.d/sshd; \
     agentbox-make-motd; \
     # Load the agentbox environment in login shells (ssh) and in every
     # interactive bash (herdr panes open non-login shells).
     ln -sf /etc/agentbox/env.sh /etc/profile.d/00-agentbox.sh; \
-    printf '\n# agentbox\n[ -r /etc/agentbox/env.sh ] && . /etc/agentbox/env.sh\n' >> /etc/bash.bashrc; \
+    printf '\n# agentbox\n[ -r /etc/agentbox/env.sh ] && . /etc/agentbox/env.sh\n[ -r /etc/agentbox/greet.sh ] && . /etc/agentbox/greet.sh\n' >> /etc/bash.bashrc; \
     # The home skel is copied into the volume on first boot by the entrypoint.
     cp /etc/skel/.bashrc /etc/skel/.profile /opt/agentbox/skel/; \
     chown -R "${USER_UID}:${USER_GID}" /opt/agentbox/skel

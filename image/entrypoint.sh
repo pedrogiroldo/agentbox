@@ -58,6 +58,25 @@ if [ -n "${TZ:-}" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 2b. Publish the container's environment to interactive shells
+#
+# sshd does not pass the container's environment to a session — it builds a
+# fresh one. So anything set in docker-compose.yml (LANG, TZ, AGENTBOX_BANNER)
+# would be invisible over SSH. Write it where /etc/agentbox/env.sh can find it.
+# `${VAR:-value}` form, so a client that forwards its own LANG still wins.
+# ---------------------------------------------------------------------------
+config_env=/etc/agentbox/config.env
+: > "$config_env"
+for var in LANG LC_ALL TZ AGENTBOX_BANNER AGENTBOX_BANNER_BY; do
+    eval "value=\${$var:-}"
+    [ -n "$value" ] || continue
+    # Escape any embedded double quote; these values are short and tame.
+    escaped=$(printf '%s' "$value" | sed 's/"/\\"/g')
+    printf 'export %s="${%s:-%s}"\n' "$var" "$var" "$escaped" >> "$config_env"
+done
+chmod 0644 "$config_env"
+
+# ---------------------------------------------------------------------------
 # 3. Home volume: seed it from the image skel
 #
 # --ignore-existing means your edits always win; a newer image only adds files

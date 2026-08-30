@@ -171,6 +171,9 @@ in plaintext. [docs/security.md](docs/security.md) has the rest.
   image only adds files you don't have yet.
 - **Herdr config**: `image/skel/.config/herdr/config.toml`
   (`herdr --default-config` prints every option).
+- **Welcome banner**: `AGENTBOX_BANNER` in `.env` — `login` (default),
+  `always` (every herdr pane) or `off`; `AGENTBOX_BANNER_BY` changes the
+  signature. The wordmark has three sizes and picks the one that fits.
 - **More tools in the image**: edit the `Dockerfile`, run `make update`.
 - **More tools without a rebuild**: `~/.agentbox/provision.sh`.
 - **Pinned versions**: `NODE_VERSION`, `NVIM_VERSION`, `CLAUDE_CODE_VERSION`,

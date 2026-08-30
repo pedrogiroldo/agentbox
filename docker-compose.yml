@@ -39,6 +39,9 @@ services:
       LANG: ${AGENTBOX_LANG:-en_US.UTF-8}
       LC_ALL: ${AGENTBOX_LANG:-en_US.UTF-8}
       # --- behaviour ---
+      # Where the agentbox wordmark shows up: login (default) | always | off
+      AGENTBOX_BANNER: ${AGENTBOX_BANNER:-login}
+      AGENTBOX_BANNER_BY: ${AGENTBOX_BANNER_BY:-}
       AGENTBOX_HERDR_INTEGRATIONS: ${AGENTBOX_HERDR_INTEGRATIONS:-1}
       # Set to "force" once to restore the config files shipped in the image.
       AGENTBOX_RESEED: ${AGENTBOX_RESEED:-}

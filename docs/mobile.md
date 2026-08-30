@@ -38,7 +38,19 @@ line. Never copy a private key between devices.
 - **Keep alive**: the server already sends keepalives every 30s. If your client
   offers its own, match it.
 
-## 3. Herdr in one minute
+## 3. The banner
+
+Logging in prints the agentbox wordmark. It comes in three sizes and picks by
+terminal width, so a phone gets the compact one instead of six wrapped lines of
+confetti. `AGENTBOX_BANNER=always` shows it in every herdr pane too,
+`AGENTBOX_BANNER=off` never shows it, and `AGENTBOX_BANNER_BY` sets the line
+underneath.
+
+The one-screen summary that follows the wordmark (versions, paths) only appears
+on terminals at least 70 columns wide and 26 rows tall — on a phone the banner
+plus a `run herdr to start` line is all you get, on purpose.
+
+## 4. Herdr in one minute
 
 `herdr` is the first thing to run after logging in. It is a terminal
 multiplexer built for coding agents: it keeps everything running when you
@@ -68,7 +80,7 @@ one screen, one thing.
 Reconnecting is just `ssh` again and `herdr` — it reattaches to the running
 session with every agent exactly where you left it.
 
-## 4. Neovim on a 6-inch screen
+## 5. Neovim on a 6-inch screen
 
 The config in this image is the LazyVim starter plus a **mobile mode** that
 turns on by itself when the terminal is narrower than 90 columns (force it with
@@ -93,7 +105,7 @@ What changes:
 `<leader>gw` (space, g, w) opens a git worktree switcher — handy when several
 agents work on the same repo in different worktrees.
 
-## 5. mosh (optional)
+## 6. mosh (optional)
 
 `mosh` is installed. It survives switching between Wi-Fi and mobile data and
 hides latency while you type, which is a real difference on a train.

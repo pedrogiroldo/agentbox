@@ -1,6 +1,11 @@
 # Sourced by every login shell (/etc/profile.d) and every interactive bash
 # (/etc/bash.bashrc). Keep it POSIX-ish and side-effect free.
 
+# sshd builds a session environment from scratch: variables set on the
+# container (LANG, TZ, AGENTBOX_*) never reach an SSH login on their own. The
+# entrypoint writes them here on boot so both logins and herdr panes see them.
+[ -r /etc/agentbox/config.env ] && . /etc/agentbox/config.env
+
 # Tools the agents install into the home volume win over the ones baked into
 # the image, so `claude update` (and friends) actually take effect.
 case ":${PATH}:" in
