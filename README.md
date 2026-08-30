@@ -67,6 +67,7 @@ transforma "abrir o terminal no celular" em algo que faz sentido.
 | **Agentes** | Claude Code, Codex CLI, opencode — com as integrações do Herdr já configuradas |
 | **Multiplexador** | [Herdr](https://herdr.dev) (e tmux, se você preferir) |
 | **Editor** | Neovim + LazyVim, com **modo mobile** automático |
+| **Tema** | [Vesper](https://github.com/datsfilipe/vesper.nvim) no Herdr e no Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Ferramentas** | git, git-lfs, gh (GitHub CLI), ripgrep, fd, fzf, jq, build-essential, Docker CLI |
 

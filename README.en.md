@@ -66,6 +66,7 @@ what makes "open a terminal on your phone" a reasonable thing to do.
 | **Agents** | Claude Code, Codex CLI, opencode — Herdr integrations pre-wired |
 | **Multiplexer** | [Herdr](https://herdr.dev) (tmux too, if you prefer) |
 | **Editor** | Neovim + LazyVim with an automatic **mobile mode** |
+| **Theme** | [Vesper](https://github.com/datsfilipe/vesper.nvim) in both Herdr and Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Tools** | git, git-lfs, gh, ripgrep, fd, fzf, jq, build-essential, Docker CLI |
 
