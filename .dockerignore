@@ -1,0 +1,4 @@
+# The build only needs image/. Everything else just slows the context upload.
+*
+!image
+!Dockerfile

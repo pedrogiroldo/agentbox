@@ -1,0 +1,6 @@
+# Herdr configuration. Full reference: https://herdr.dev/docs
+# `herdr --default-config` prints every option with its default value.
+
+[theme]
+name = "vesper"
+auto_switch = false

@@ -1,0 +1,41 @@
+# agentbox sshd configuration.
+#
+# First-match-wins in sshd: the Include has to stay at the top so the
+# entrypoint's generated drop-ins can override anything below it.
+Include /etc/agentbox/sshd.d/*.conf
+
+Port 22
+AddressFamily any
+
+# Host keys live in the persistent volume, so the fingerprint your phone
+# trusted does not change every time the container is recreated.
+HostKey /home/dev/.agentbox/ssh/ssh_host_ed25519_key
+HostKey /home/dev/.agentbox/ssh/ssh_host_rsa_key
+
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+UsePAM yes
+
+# .ssh/authorized_keys      -> keys you add by hand, never touched by agentbox
+# .ssh/authorized_keys.d/*  -> keys managed from the environment on every boot
+AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/agentbox
+
+# Local port forwarding is what lets you reach a dev server running inside the
+# box from your laptop's browser (ssh -L 3000:localhost:3000).
+AllowTcpForwarding yes
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+AllowAgentForwarding yes
+
+# Mobile links drop constantly; keep sessions alive a bit longer.
+ClientAliveInterval 30
+ClientAliveCountMax 6
+TCPKeepAlive yes
+
+PrintMotd yes
+AcceptEnv LANG LC_* TERM COLORTERM
+Subsystem sftp /usr/lib/openssh/sftp-server

@@ -1,0 +1,31 @@
+# Deploy the prebuilt image — no build step on your server.
+#
+# This is the file to paste into Coolify / Dokploy / Portainer when you do not
+# want them compiling the image on a small VPS. See docs/deploy.md.
+name: agentbox
+
+services:
+  agentbox:
+    image: ghcr.io/pedrogiroldo/agentbox:latest
+    container_name: agentbox
+    hostname: agentbox
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+    ports:
+      - "2222:22"
+
+    environment:
+      # REQUIRED — the public key you will SSH with (laptop and/or phone).
+      SSH_PUBLIC_KEY: "ssh-ed25519 AAAA... you@laptop"
+      GIT_USER_NAME: "Your Name"
+      GIT_USER_EMAIL: "you@example.com"
+      TZ: "UTC"
+      LANG: "en_US.UTF-8"
+      LC_ALL: "en_US.UTF-8"
+
+    volumes:
+      - agentbox-home:/home/dev
+
+volumes:
+  agentbox-home:

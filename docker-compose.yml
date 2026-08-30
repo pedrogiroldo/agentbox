@@ -1,0 +1,67 @@
+name: agentbox
+
+services:
+  agentbox:
+    # Build from this repository. To use the prebuilt image instead, comment
+    # out the `build:` block and set AGENTBOX_IMAGE in your .env.
+    build:
+      context: .
+      args:
+        NODE_VERSION: ${NODE_VERSION:-24.13.0}
+        NVIM_VERSION: ${NVIM_VERSION:-stable}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+        CODEX_VERSION: ${CODEX_VERSION:-latest}
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-latest}
+        INSTALL_DOCKER_CLI: ${INSTALL_DOCKER_CLI:-true}
+        PREINSTALL_NVIM_PLUGINS: ${PREINSTALL_NVIM_PLUGINS:-true}
+    image: ${AGENTBOX_IMAGE:-agentbox:local}
+    container_name: ${AGENTBOX_NAME:-agentbox}
+    hostname: ${AGENTBOX_HOSTNAME:-agentbox}
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+    ports:
+      # host:container — connect with `ssh -p 2222 dev@<host>`
+      - "${SSH_PORT:-2222}:22"
+      # mosh survives a phone changing networks, but needs UDP. Most managed
+      # proxies (Coolify/Dokploy) do not forward UDP; enable only if yours does.
+      # - "${MOSH_PORT_RANGE:-60000-60010}:60000-60010/udp"
+
+    environment:
+      # --- access ---
+      SSH_PUBLIC_KEY: ${SSH_PUBLIC_KEY:-}
+      AGENTBOX_PASSWORD: ${AGENTBOX_PASSWORD:-}
+      # --- identity ---
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      # --- locale ---
+      TZ: ${TZ:-UTC}
+      LANG: ${AGENTBOX_LANG:-en_US.UTF-8}
+      LC_ALL: ${AGENTBOX_LANG:-en_US.UTF-8}
+      # --- behaviour ---
+      AGENTBOX_HERDR_INTEGRATIONS: ${AGENTBOX_HERDR_INTEGRATIONS:-1}
+      # Set to "force" once to restore the config files shipped in the image.
+      AGENTBOX_RESEED: ${AGENTBOX_RESEED:-}
+      # Only needed when /home/dev is a bind mount and uids must match the host.
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
+
+    volumes:
+      # Everything you care about lives here: repos, agent credentials, shell
+      # history, Neovim state, herdr sessions, SSH host keys.
+      - agentbox-home:/home/dev
+      # Optional: talk to the host's Docker daemon from inside the box.
+      # This is root-equivalent access to the host — read docs/security.md.
+      # - /var/run/docker.sock:/var/run/docker.sock
+
+    # Agents spawn a lot of short-lived processes; give the box room to breathe.
+    # Uncomment and tune for your server.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "4"
+    #       memory: 8g
+
+volumes:
+  agentbox-home:
+    name: ${AGENTBOX_VOLUME:-agentbox-home}
