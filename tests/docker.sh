@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
-# Does the box's own Docker daemon work — and does it fail honestly when it
+# Does the box get a working Docker daemon — and does it fail honestly when it
 # cannot?
 #
-# Three questions, in order of how much they need from the host:
-#   1. a box with no engine still boots, and says so plainly
-#   2. an engine that cannot run (unprivileged) does not take the boot down,
-#      and AGENTBOX_DOCKER=on turns that into a refusal to boot
-#   3. privileged, the daemon comes up and actually runs a container
+# The engine is not in the image: the box installs it on the first boot and
+# agentbox-persist keeps it in the state volume. So the questions are
 #
-# 2 and 3 are skipped when the image was built with INSTALL_DOCKER_ENGINE=false.
+#   1. a box told not to have Docker still boots, and downloads nothing
+#   2. an engine that could not run is not downloaded at all, and its absence
+#      does not take the boot down — while AGENTBOX_DOCKER=on turns that same
+#      situation into a refusal to boot
+#   3. privileged, the daemon installs, comes up, and runs a real container
+#   4. a recreated box gets it back from the volume, without the network
+#
+# 3 and 4 need a host that allows --privileged, and 3 needs the network.
 #
 #     make build && tests/docker.sh agentbox:local
 set -euo pipefail
 
 IMAGE="${1:-agentbox:local}"
 NAME="agentbox-dockertest-$$"
+HOME_VOL="$NAME-home"
+STATE_VOL="$NAME-state"
+DOCKER_VOL="$NAME-docker"
 TMP="$(mktemp -d)"
 
 pass() { printf '  \033[32mok\033[0m   %s\n' "$*"; }
@@ -25,6 +32,7 @@ failures=0
 
 cleanup() {
     docker rm -f "$NAME" >/dev/null 2>&1 || true
+    docker volume rm "$HOME_VOL" "$STATE_VOL" "$DOCKER_VOL" >/dev/null 2>&1 || true
     rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -36,7 +44,9 @@ PUBKEY="$(cat "$TMP/key.pub")"
 boot() {
     docker run -d --name "$NAME" \
         -e SSH_PUBLIC_KEY="$PUBKEY" \
-        -e AGENTBOX_PERSIST=0 \
+        -v "$HOME_VOL":/home/dev \
+        -v "$STATE_VOL":/var/lib/agentbox \
+        -v "$DOCKER_VOL":/var/lib/docker \
         "$@" "$IMAGE" >/dev/null
 
     for _ in $(seq 90); do
@@ -50,41 +60,46 @@ boot() {
 in_box() { docker exec "$NAME" bash -lc "$1"; }
 reset_box() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 
-engine_in_image() {
-    docker run --rm --entrypoint sh "$IMAGE" -c 'command -v dockerd >/dev/null'
+# The engine arrives in the background, after the apt replay: sshd being up is
+# not the same thing as Docker being ready.
+wait_for_docker() {
+    for _ in $(seq "${1:-420}"); do
+        in_box 'docker version >/dev/null 2>&1' && return 0
+        docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null | grep -q false && return 1
+        sleep 1
+    done
+    return 1
 }
 
-step "a box with the engine off still boots"
+step "AGENTBOX_DOCKER=off: the box boots and stays out of it"
 if boot -e AGENTBOX_DOCKER=off; then
-    pass "booted with AGENTBOX_DOCKER=off"
-    in_box 'agentbox-dockerd status' || true
+    pass "booted"
+    in_box 'test ! -x /usr/bin/dockerd' \
+        && pass "downloaded nothing" || fail "it installed an engine it was told not to"
 else
     fail "AGENTBOX_DOCKER=off kept the box from booting"
     docker logs "$NAME" 2>&1 | tail -20
 fi
 reset_box
 
-if ! engine_in_image; then
-    step "the rest needs an image built with INSTALL_DOCKER_ENGINE=true"
-    skip "no dockerd in $IMAGE — it was built with INSTALL_DOCKER_ENGINE=false"
-    echo
-    [ "$failures" -eq 0 ] && { printf '\033[32mall good (partial run)\033[0m\n'; exit 0; }
-    printf '\033[31m%d check(s) failed\033[0m\n' "$failures"; exit 1
-fi
-
-# An engine that cannot create namespaces is the interesting failure: it is
-# what every unprivileged host gives you, and the box has to survive it.
-step "unprivileged: the daemon is refused, the box lives"
-if boot; then
+# The interesting failure: no privileges is what every ordinary host gives you.
+step "unprivileged: refused before the download, and the box lives"
+if boot -e AGENTBOX_DOCKER=install; then
     pass "booted without privileges"
     docker logs "$NAME" 2>&1 | grep -qi 'CAP_SYS_ADMIN' \
         && pass "the log says why (missing CAP_SYS_ADMIN)" \
         || fail "the log does not explain the refusal"
+    # Checking capabilities before apt is the whole point: 192 MB for a daemon
+    # that could never have run is a bad way to spend someone's first boot.
+    sleep 20
+    in_box 'test ! -x /usr/bin/dockerd' \
+        && pass "did not download an engine it cannot run" \
+        || fail "it downloaded the engine anyway"
     in_box 'test ! -S /var/run/docker.sock' \
         && pass "no half-started daemon left behind" \
         || fail "something is listening on the socket"
 else
-    fail "an unusable engine took the whole boot down"
+    fail "an engine it could not run took the whole boot down"
     docker logs "$NAME" 2>&1 | tail -20
 fi
 reset_box
@@ -99,26 +114,56 @@ else
 fi
 reset_box
 
-step "privileged: the daemon runs, and so do containers"
 if ! docker run --rm --privileged --entrypoint true "$IMAGE" 2>/dev/null; then
-    skip "this host does not allow --privileged"
-elif boot --privileged; then
+    step "the rest needs a host that allows --privileged"
+    skip "this one does not"
+    echo
+    [ "$failures" -eq 0 ] && { printf '\033[32mall good (partial run)\033[0m\n'; exit 0; }
+    printf '\033[31m%d check(s) failed\033[0m\n' "$failures"; exit 1
+fi
+
+step "privileged: the engine installs itself and runs a container"
+if boot --privileged -e AGENTBOX_DOCKER=install; then
     pass "booted privileged"
-    in_box 'agentbox-dockerd status'
-    in_box 'docker version --format "{{.Server.Version}}"' >/dev/null \
-        && pass "the daemon answers" || fail "the daemon does not answer"
-    # The whole point: a container, end to end, inside the box.
-    if in_box 'docker run --rm hello-world' >/dev/null 2>&1; then
-        pass "ran a container inside the box"
+    if wait_for_docker; then
+        pass "the daemon answers"
+        in_box 'agentbox-dockerd status'
+        in_box 'docker run --rm hello-world' >/dev/null 2>&1 \
+            && pass "ran a container inside the box" \
+            || fail "the daemon is up but cannot run a container"
+        # Without sudo: the image puts dev in the docker group up front, so a
+        # daemon appearing mid-session does not need a second login.
+        docker exec -u dev "$NAME" docker ps >/dev/null 2>&1 \
+            && pass "dev reaches the socket without sudo" \
+            || fail "dev needs sudo to talk to the daemon"
+        in_box 'agentbox-persist status | grep -q docker-ce' \
+            && pass "the engine is recorded for the next boot" \
+            || fail "nothing was recorded — a recreate would download it again"
     else
-        fail "the daemon is up but cannot run a container"
-        in_box 'tail -20 /var/lib/agentbox/log/dockerd.log' || true
+        fail "the daemon never came up"
+        in_box 'tail -25 /var/lib/agentbox/log/dockerd.log' || true
     fi
-    in_box 'id dev | grep -q "(docker)"' \
-        && pass "dev is in the docker group" \
-        || fail "dev cannot reach the socket without sudo"
 else
     fail "privileged boot failed"
+    docker logs "$NAME" 2>&1 | tail -20
+fi
+
+# The claim that justifies keeping the engine out of the image: it comes back
+# from the volume, so only the very first boot of a box ever downloads it.
+step "recreated on the same volumes: it comes back offline"
+reset_box
+if boot --privileged -e AGENTBOX_DOCKER=auto; then   # auto: never installs
+    if wait_for_docker; then
+        pass "docker is back without installing anything"
+        in_box 'docker run --rm hello-world' >/dev/null 2>&1 \
+            && pass "and still runs containers" \
+            || fail "the daemon is up but containers do not run"
+    else
+        fail "the engine did not survive the recreate"
+        in_box 'tail -25 /var/lib/agentbox/log/replay.log' || true
+    fi
+else
+    fail "the recreated box did not boot"
     docker logs "$NAME" 2>&1 | tail -20
 fi
 

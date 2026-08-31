@@ -1,6 +1,6 @@
 # Docker inside the box
 
-The box is its own Docker host. `docker run` works the moment you log in, with
+The box is its own Docker host. `docker run` works from your first login, with
 no socket to mount and nothing to configure:
 
 ```
@@ -9,35 +9,49 @@ own daemon: running (pid 143, log /var/lib/agentbox/log/dockerd.log)
   client 29.7.2  server 29.7.2
 ```
 
-That is the default, and it is not free: it costs ~400 MB of image and a
-`privileged: true` container. This page is about what that means, and what to
-do when you do not want it.
+Two things pay for that, and both are worth knowing about: a `privileged`
+container, and a 192 MB engine that is *not* in the image.
 
-## What makes it work
+## Where the engine lives
 
-Three lines in `docker-compose.yml`, and they only make sense together:
+The daemon is `docker-ce` plus `containerd.io` — 192 MB installed. Baking that
+into the image would charge it to everyone who pulls agentbox, including the
+boxes that never run a container.
 
-```yaml
-    privileged: true
-    volumes:
-      - agentbox-docker:/var/lib/docker
+So the box installs it on the first boot instead, and from there the same
+machinery that remembers your `apt install`s remembers this one:
+
+```
+$ agentbox-persist status
+packages:     2
+  - containerd.io
+  - docker-ce
 ```
 
-plus `INSTALL_DOCKER_ENGINE=true` at build time, which puts `docker-ce` and
-`containerd.io` in the image.
+Every later boot replays it from the state volume's own `.deb` cache, offline
+and in seconds. Only the very first boot of a box ever downloads anything, and
+`docker compose down && up` does not count as first — the volumes are what
+"first" is measured against. See [persistence.md](persistence.md).
 
-`agentbox-dockerd` starts the daemon during boot, before sshd, and stops it on
-the way out — the container's `stop_grace_period` is 90s so your containers get
-a chance to flush before the box saves its own system layer. `AGENTBOX_DOCKER`
-picks the policy: `auto` (default: start it when the host allows it), `on` (a
-box without a daemon refuses to boot — for deploys where a silent degradation
-is worse than a failure), `off`.
+The install runs in the background, after the package replay and before your
+provision script, so a first boot still gives you a login immediately. Docker
+shows up a couple of minutes later; `agentbox-dockerd status` says where it is.
 
-The `agentbox-docker` volume is what keeps images and containers across a
-recreate. It is also the one volume of the three you can delete without losing
-work: everything in it is rebuildable.
+**Want it in the image anyway** — for a box that must run containers the second
+it boots, or one with no network:
 
-### Why privileged, and why there is no lighter version
+```bash
+# .env
+INSTALL_DOCKER_ENGINE=true
+```
+
+`AGENTBOX_DOCKER` decides what the box does at boot: `install` (default: fetch
+it when missing, then run it), `auto` (run it only if something already
+installed it), `on` (a box without a working daemon refuses to boot — and it
+waits for the install *before* sshd, so a first boot takes minutes longer
+instead of handing you a box that may or may not get a daemon), `off`.
+
+## Why privileged, and why there is no lighter version
 
 A daemon does not just need to *start* — it needs to unshare namespaces, mount
 filesystems and write cgroups for every container it runs. An ordinary
@@ -53,33 +67,40 @@ version`. It cannot unpack an image:
 docker: failed to register layer: unshare: operation not permitted
 ```
 
-That half-working daemon is why the boot checks `CAP_SYS_ADMIN` first and
-refuses loudly instead of starting one. Rootless mode does not rescue this
-either — it needs user namespaces, which is the very thing being denied.
+That half-working daemon is why the boot checks `CAP_SYS_ADMIN` *before*
+downloading anything — an engine that could never run is a bad way to spend
+192 MB of someone's first boot — and refuses out loud instead of leaving a
+dockerd crash-looping into a log nobody reads. Rootless mode does not rescue
+this either: it needs user namespaces, which is the very thing being denied.
 
 So: privileged, or no daemon. And privileged means the container can take over
-the machine under it. That is the trade the default makes; [security.md](
-security.md) is the rest of the argument.
+the machine under it. That is the trade the default makes;
+[security.md](security.md) is the rest of the argument.
+
+The other required line is the volume:
+
+```yaml
+      - agentbox-docker:/var/lib/docker
+```
+
+Without it Docker's data directory lands on the container's own overlayfs,
+overlay2 refuses to stack there, and the daemon falls back to `vfs`: every
+layer copied in full, gigabytes and minutes for what should be seconds. Images
+also vanish on the next recreate. The boot warns when it sees this.
 
 ## Turning it off
 
 Two levels, depending on how far you want to go.
 
-**Keep the engine, do not start it** — one environment variable, no rebuild:
+**No daemon, nothing downloaded** — one environment variable, no rebuild:
 
 ```yaml
     AGENTBOX_DOCKER: "off"
 ```
 
-**Take the privileges away too** — the box can no longer touch the host:
-
-```bash
-# .env
-INSTALL_DOCKER_ENGINE=false
-```
-
-and delete the `privileged: true` line, then `make build && make up`. You get
-the client without a daemon, which is the right shape for the next two options.
+**No privileges either** — delete the `privileged: true` line and recreate. The
+container goes back to being a sandbox, which is what the rest of
+[security.md](security.md) assumes.
 
 ## Borrowing a daemon instead
 
@@ -91,13 +112,16 @@ the client without a daemon, which is the right shape for the next two options.
 
 The daemon inside notices the socket at boot and steps aside, so the two never
 fight over the path. Your containers become siblings of the box, sharing the
-host's images and networks. The entrypoint finds the group that owns the socket
-and puts `dev` in it, so `docker ps` works without `sudo`.
+host's images and networks, and the entrypoint puts `dev` in the group that
+owns the socket.
 
-Note this is *also* root-equivalent access to the host — it is not the safer
-option, just a different road to the same place.
+Note this is *also* root-equivalent access to the host — not the safer option,
+just a different road to the same place. And containers started this way run
+next to the box, not in it: a `-v $PWD:/app` points at a path that exists in
+the box and not on the host, which is exactly the shape `docker compose up` in
+one of your repositories takes.
 
-**Another machine's**, over SSH — no socket, no privileges, no rebuild:
+**Another machine's**, over SSH — no socket, no privileges, no download:
 
 ```bash
 docker context create dev-host --docker host=ssh://you@another-machine
@@ -105,29 +129,32 @@ docker context use dev-host
 ```
 
 The blast radius moves to that machine. When it is a throwaway VM, this is the
-safest of the three by a wide margin.
+safest of the three by a wide margin, with the same bind-mount caveat.
 
 ## Troubleshooting
 
+**`docker` says nothing is running, right after a boot** — on a recreated box
+the engine comes back with the package replay, which runs in the background.
+`agentbox-dockerd status` and `/var/lib/agentbox/log/replay.log` say how far
+along it is.
+
 **The boot log says `no CAP_SYS_ADMIN`** — the host did not grant privileges.
-Check that `privileged: true` survived into the running container
+Check that it survived into the running container
 (`docker inspect -f '{{.HostConfig.Privileged}}' agentbox`) and recreate;
 `restart` is not enough, capabilities are fixed when a container is created.
 Some managed platforms strip it — Kubernetes-based ones usually do, plain
 `docker compose` ones (Coolify, Dokploy) usually do not.
 
-**`Cannot connect to the Docker daemon`** — `agentbox-dockerd status` says
-which of the three shapes you are in, if any.
+**The install fails on the first boot** — the box has no route to
+`download.docker.com`, or the apt repository is missing because the image was
+built with `INSTALL_DOCKER_CLI=false`. The tail of
+`/var/lib/agentbox/log/dockerd.log` has the apt output.
 
-**`permission denied while trying to connect to the Docker API`** — the socket
-appeared after boot, so `dev` never joined its group. Recreate the container,
-or `sudo usermod -aG docker dev` and log in again.
+**`permission denied while trying to connect to the Docker API`** — normally
+handled: the image puts `dev` in the `docker` group at build time. It comes
+back if you bind-mount a *host* socket that appeared after boot, so `dev` never
+joined its group — recreate the container, or `sudo usermod -aG docker dev` and
+log in again.
 
-**Docker is using the `vfs` storage driver** — `/var/lib/docker` is on the
-container filesystem, so overlay2 refused to stack there. Every layer gets
-copied in full: gigabytes and minutes for what should be seconds. Mount the
-`agentbox-docker` volume. The boot warns about this.
-
-**The daemon did not come up in 60s** — the tail of
-`/var/lib/agentbox/log/dockerd.log` is printed in the boot log; the whole file
-lives in the state volume.
+**Docker is using the `vfs` storage driver** — the `agentbox-docker` volume is
+not mounted. See above.

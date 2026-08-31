@@ -51,9 +51,9 @@ removes it.
 
 ## Docker, and the privileged container
 
-**Read this one.** The box ships with its own Docker daemon, and a daemon
-inside a container only runs if that container is privileged — so
-`docker-compose.yml` sets `privileged: true`.
+**Read this one.** The box runs its own Docker daemon — installed on the first
+boot, not shipped in the image — and a daemon inside a container only runs if
+that container is privileged, so `docker-compose.yml` sets `privileged: true`.
 
 That is **root-equivalent access to the host**. A privileged container can
 mount the host's disk, load kernel modules and step out of its own isolation;

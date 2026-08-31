@@ -13,10 +13,10 @@ services:
     # Stopping your containers, then saving the system layer.
     stop_grace_period: 90s
 
-    # The published image brings its own Docker daemon, and a daemon needs
-    # this to run anything. It also makes the box as trusted as the host —
-    # docs/security.md. Drop it and set AGENTBOX_DOCKER=off for a box that
-    # cannot reach the host; everything else still works.
+    # The box runs its own Docker daemon (installed on the first boot), and a
+    # daemon needs this to run anything. It also makes the box as trusted as
+    # the host — docs/security.md. Drop it and set AGENTBOX_DOCKER=off for a
+    # box that cannot reach the host; everything else still works.
     privileged: true
 
     ports:
@@ -30,6 +30,9 @@ services:
       TZ: "UTC"
       LANG: "en_US.UTF-8"
       LC_ALL: "en_US.UTF-8"
+      # install (default): the first boot fetches the Docker engine, and the
+      # state volume keeps it from then on. off: no daemon, no download.
+      AGENTBOX_DOCKER: "install"
 
     volumes:
       - agentbox-home:/home/dev

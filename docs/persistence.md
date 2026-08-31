@@ -46,6 +46,10 @@ installed, on top of the list the image ships. On boot, agentbox reinstalls
 whatever is missing. The `.deb` cache and the package lists live in the state
 volume too, so the replay is usually offline and takes seconds.
 
+The box uses this on itself: the Docker engine is 192 MB that would otherwise
+sit in the image for everyone, so the first boot installs it and the replay
+brings it back after that ([docker.md](docker.md)).
+
 **Files.** Anything under `/usr/local`, `/opt`, `/etc`, `/root` and `/srv`
 that is *newer than the image build stamp* is yours by definition — you put it
 there. It gets copied into the state volume (every 5 minutes, on a graceful

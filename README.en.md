@@ -69,7 +69,7 @@ what makes "open a terminal on your phone" a reasonable thing to do.
 | **Theme** | [Vesper](https://github.com/datsfilipe/vesper.nvim) in both Herdr and Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Tools** | git, git-lfs, gh, ripgrep, fd, fzf, jq, build-essential |
-| **Docker** | its own daemon, on by default — the box runs containers by itself ([docs/docker.md](docs/docker.md)) |
+| **Docker** | its own daemon, installed on the first boot — the box runs containers by itself ([docs/docker.md](docs/docker.md)) |
 
 ## Getting started
 

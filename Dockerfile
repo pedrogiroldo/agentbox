@@ -24,10 +24,12 @@ ARG CODEX_VERSION=latest
 ARG OPENCODE_VERSION=latest
 
 ARG INSTALL_DOCKER_CLI=true
-# The daemon, so the box is its own Docker host and `docker run` just works.
-# On by default; it needs a privileged container to actually run -- that is
-# what docker-compose.yml ships, and docs/docker.md explains the trade.
-ARG INSTALL_DOCKER_ENGINE=true
+# Bake the daemon into the image. Off by default -- not because the box does
+# not want one, but because it installs it on first boot instead, into the
+# state volume, so that 192 MB is paid by the boxes that run containers rather
+# than by everyone who pulls agentbox. Turn it on for an image that is ready
+# to run containers the second it boots, with no network. See docs/docker.md.
+ARG INSTALL_DOCKER_ENGINE=false
 ARG PREINSTALL_NVIM_PLUGINS=true
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -164,6 +166,12 @@ RUN set -eux; \
     if id ubuntu >/dev/null 2>&1 && [ "$(id -u ubuntu)" = "1000" ]; then userdel -r ubuntu; fi; \
     if ! getent group "${USER_GID}" >/dev/null; then groupadd -g "${USER_GID}" "${USERNAME}"; fi; \
     useradd -m -u "${USER_UID}" -g "${USER_GID}" -s /bin/bash "${USERNAME}"; \
+    # The docker group up front, even though the engine arrives later (on first
+    # boot, into the state volume). dockerd hands its socket to this group, so
+    # being in it already is what keeps `docker ps` from needing sudo -- and
+    # from needing a second login after the daemon appears mid-session.
+    groupadd -f docker; \
+    usermod -aG docker "${USERNAME}"; \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-agentbox; \
     chmod 0440 /etc/sudoers.d/90-agentbox; \
     mkdir -p /run/sshd /etc/agentbox/sshd.d

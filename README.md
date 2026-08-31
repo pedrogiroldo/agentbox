@@ -70,7 +70,7 @@ transforma "abrir o terminal no celular" em algo que faz sentido.
 | **Tema** | [Vesper](https://github.com/datsfilipe/vesper.nvim) no Herdr e no Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Ferramentas** | git, git-lfs, gh (GitHub CLI), ripgrep, fd, fzf, jq, build-essential |
-| **Docker** | daemon próprio, ligado por padrão — a caixa roda containers sozinha ([docs/docker.md](docs/docker.md)) |
+| **Docker** | daemon próprio, instalado na primeira subida — a caixa roda containers sozinha ([docs/docker.md](docs/docker.md)) |
 
 ## Começando
 

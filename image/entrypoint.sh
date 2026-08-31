@@ -208,17 +208,27 @@ if [ -n "${GIT_USER_EMAIL:-}" ]; then as_user git config --global user.email "$G
 # 8. Docker
 #
 # The box gets a daemon one of two ways: a socket bind-mounted from the host,
-# or its own engine when the image was built with INSTALL_DOCKER_ENGINE=true
-# (that one needs a privileged container -- see docs/docker.md). Whichever it
-# is, it ends as a socket on the same path, so the group dance below is one
-# code path: whoever owns the socket, $USER_NAME joins them.
+# or its own engine, which is not in the image -- it is installed on the first
+# boot and then replayed from the state volume like any other package you
+# install (see docs/docker.md). Both need a privileged container.
+#
+# Only the fast path is here: an engine that is already installed starts before
+# sshd, so it is up by the time you log in. Installing it, and the apt replay
+# that brings it back on a recreated box, are minutes of work -- those happen
+# in the background chain further down, so a first boot is still a fast login.
 # ---------------------------------------------------------------------------
-if ! agentbox-dockerd start; then
-    [ "${AGENTBOX_DOCKER:-auto}" != "on" ] \
-        || die "AGENTBOX_DOCKER=on but the daemon could not start (reason above)"
-    warn "no docker in this box (reason above) — the rest of the boot continues"
+if [ "${AGENTBOX_DOCKER:-install}" = "on" ]; then
+    # This box is not worth booting without Docker, so it waits here for the
+    # whole thing -- install included -- rather than letting you log into a box
+    # that may or may not get a daemon a few minutes from now.
+    agentbox-dockerd ensure \
+        || die "AGENTBOX_DOCKER=on but docker is not available (reason above)"
+elif ! agentbox-dockerd start; then
+    warn "no docker in this box yet (reason above) — the rest of the boot continues"
 fi
 
+# A socket from the host is owned by a group that only exists out there; the
+# image's own `docker` group already covers the daemon we start ourselves.
 if [ -S /var/run/docker.sock ]; then
     sock_gid="$(stat -c %g /var/run/docker.sock)"
     if ! getent group "$sock_gid" >/dev/null; then
@@ -240,10 +250,11 @@ if [ "${AGENTBOX_HERDR_INTEGRATIONS:-1}" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 10. Bring your world back: packages, then your provisioning script
+# 10. Bring your world back: packages, Docker, then your provisioning script
 #
-# Both run in one background chain so they never fight over the dpkg lock, and
-# in this order because a provision script usually assumes its packages exist.
+# All of it in one background chain so they never fight over the dpkg lock, and
+# in this order because a provision script usually assumes its packages exist —
+# and `docker compose up` in one of them assumes a daemon.
 # ---------------------------------------------------------------------------
 provision="$STATE_DIR/provision.sh"
 
@@ -256,6 +267,13 @@ fi
 (
     if [ "${AGENTBOX_PERSIST:-1}" != "0" ]; then
         agentbox-persist replay-apt 2>&1 | tee -a "$PERSIST_DIR/log/replay.log"
+    fi
+
+    # After the replay, because on a recreated box that is what puts the engine
+    # back. On a first boot there is nothing to replay and this installs it.
+    # AGENTBOX_DOCKER=on already did all of it, in the foreground, above.
+    if [ "${AGENTBOX_DOCKER:-install}" != "on" ]; then
+        agentbox-dockerd ensure || warn "docker is not available in this box"
     fi
 
     if [ -f "$provision" ]; then

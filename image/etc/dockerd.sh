@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
-# agentbox-dockerd — runs the box's own Docker daemon, when the image was
-# built with INSTALL_DOCKER_ENGINE=true.
+# agentbox-dockerd — runs the box's own Docker daemon.
 #
-# A daemon inside a container is not a matter of installing it: it needs
-# namespaces, and an ordinary container is not allowed to create any. So this
-# checks first and says exactly what is missing, instead of leaving a dockerd
+# The engine is not in the image: it is 192 MB that everyone pulling agentbox
+# would pay for whether or not they want containers. Instead the box installs
+# it on first boot, and agentbox-persist keeps it in the state volume like any
+# other package you install — so it comes back on every boot after that, from
+# the volume's own .deb cache, offline.
+#
+# The other half is that a daemon inside a container needs namespaces, and an
+# ordinary container is not allowed to create any. That is checked *before*
+# downloading anything, and said out loud, instead of leaving a dockerd
 # crash-looping into a log nobody reads.
 #
-#   start   preflight, then launch dockerd in the background and wait for it
+#   ensure  install the engine if it is missing, then start it (boot, in the
+#           background — a first boot must not wait on a 192 MB download)
+#   start   preflight, then launch dockerd and wait for it to answer
 #   stop    ask it to shut down and give the containers time to stop
 #   status  what the box is talking to, if anything
 #
-# AGENTBOX_DOCKER=auto   start it if the engine is there and the box may (default)
-#                 =on    same, but a failed preflight is fatal — for deploys
-#                        where a box without Docker is not worth booting
-#                 =off   never
+# AGENTBOX_DOCKER=install  install it when missing, then run it (default)
+#                 =auto    run it only if something already installed it
+#                 =on      like install, but any failure is fatal — for deploys
+#                          where a box without Docker is not worth booting
+#                 =off     never
 set -uo pipefail
 
 SOCKET=/var/run/docker.sock
@@ -22,7 +30,7 @@ PIDFILE=/run/agentbox-dockerd.pid
 DATA_ROOT=/var/lib/docker
 LOG_DIR="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}/log"
 LOG="$LOG_DIR/dockerd.log"
-MODE="${AGENTBOX_DOCKER:-auto}"
+MODE="${AGENTBOX_DOCKER:-install}"
 START_TIMEOUT="${AGENTBOX_DOCKER_TIMEOUT:-60}"
 STOP_TIMEOUT="${AGENTBOX_DOCKER_STOP_TIMEOUT:-20}"
 
@@ -60,10 +68,11 @@ has_sys_admin() {
 }
 
 preflight() {
-    has_sys_admin || give_up "the engine is installed but this container may not create namespaces
-       (no CAP_SYS_ADMIN). Add 'privileged: true' to the agentbox service in
-       docker-compose.yml and recreate the container. Read docs/security.md
-       first: privileged is root-equivalent access to the host."
+    has_sys_admin || give_up "this container may not create namespaces (no CAP_SYS_ADMIN), so a
+       docker daemon cannot run in it. Add 'privileged: true' to the agentbox
+       service in docker-compose.yml and recreate the container — a restart
+       will not do, capabilities are fixed when a container is created. Read
+       docs/security.md first: privileged is root-equivalent on the host."
 
     # Under an unprivileged container this is read-only, and containerd fails
     # the moment it tries to place a container in a cgroup.
@@ -87,14 +96,59 @@ check_storage() {
     fi
 }
 
+# Only ever runs on a box that does not have the engine yet: after this, the
+# dpkg hook has recorded both packages and agentbox-persist replays them from
+# the state volume's .deb cache on every later boot, without the network.
+install_engine() {
+    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+        give_up "the docker apt repository is not configured in this image, so the
+       engine cannot be installed. Rebuild with INSTALL_DOCKER_CLI=true."
+    fi
+
+    log "installing the docker engine (~192 MB) — first boot only, the state"
+    log "volume keeps it from here on"
+
+    if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1 \
+       || ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+              --no-install-recommends docker-ce containerd.io >>"$LOG" 2>&1; then
+        give_up "could not install the docker engine. Last lines of $LOG:
+$(tail -n 15 "$LOG" 2>/dev/null | sed 's/^/       /')"
+    fi
+
+    # Write it into the state volume now rather than waiting for the periodic
+    # save: a box stopped in its first five minutes would install it twice.
+    if [ "${AGENTBOX_PERSIST:-1}" != "0" ]; then
+        agentbox-persist save >/dev/null 2>&1 \
+            || warn "the engine is installed but was not recorded for the next boot"
+    fi
+}
+
+# Boot path: everything start() does, plus the install when it is missing.
+ensure() {
+    [ "$MODE" != "off" ] || { log "AGENTBOX_DOCKER=off — not starting a daemon"; exit 0; }
+    running && exit 0
+    [ ! -S "$SOCKET" ] || exit 0   # the host lent us one; start() explains
+
+    if ! installed; then
+        case "$MODE" in
+            install|on)
+                install -d -m 0755 "$LOG_DIR"
+                preflight          # before the download, not after
+                install_engine ;;
+            *)
+                log "no docker engine installed (AGENTBOX_DOCKER=$MODE)"
+                exit 0 ;;
+        esac
+    fi
+    start
+}
+
 start() {
     [ "$MODE" != "off" ] || { log "AGENTBOX_DOCKER=off — not starting a daemon"; exit 0; }
 
-    if ! installed; then
-        [ "$MODE" != "on" ] || give_up "AGENTBOX_DOCKER=on but this image has no daemon. Rebuild with
-       --build-arg INSTALL_DOCKER_ENGINE=true (or INSTALL_DOCKER_ENGINE=true in .env)."
-        exit 0
-    fi
+    # Nothing to start yet, and nothing to complain about: on a box that has
+    # not installed the engine, `ensure` is the one that gets to have opinions.
+    installed || exit 0
 
     running && { log "the daemon is already running"; exit 0; }
 
@@ -162,15 +216,17 @@ status() {
     elif installed; then
         echo "engine installed, not running (AGENTBOX_DOCKER=$MODE)"
     else
-        echo "no docker: the image was built without the engine and no socket is mounted"
+        echo "no docker engine here yet (AGENTBOX_DOCKER=$MODE), and no socket mounted"
+        echo "  the first boot installs it in the background — check $LOG"
         return 1
     fi
     docker version --format '  client {{.Client.Version}}  server {{.Server.Version}}' 2>/dev/null || true
 }
 
 case "${1:-status}" in
+    ensure) ensure ;;
     start)  start ;;
     stop)   stop ;;
     status) status ;;
-    *) echo "usage: agentbox-dockerd {start|stop|status}" >&2; exit 2 ;;
+    *) echo "usage: agentbox-dockerd {ensure|start|stop|status}" >&2; exit 2 ;;
 esac

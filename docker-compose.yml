@@ -13,9 +13,10 @@ services:
         CODEX_VERSION: ${CODEX_VERSION:-latest}
         OPENCODE_VERSION: ${OPENCODE_VERSION:-latest}
         INSTALL_DOCKER_CLI: ${INSTALL_DOCKER_CLI:-true}
-        # The box's own Docker daemon. false builds a client-only box — see
-        # docs/docker.md for what you give up and what you get back.
-        INSTALL_DOCKER_ENGINE: ${INSTALL_DOCKER_ENGINE:-true}
+        # Bake the Docker daemon into the image (+192 MB). Off, because the box
+        # installs it on first boot into the state volume instead — same
+        # result, smaller image. docs/docker.md has the trade.
+        INSTALL_DOCKER_ENGINE: ${INSTALL_DOCKER_ENGINE:-false}
         PREINSTALL_NVIM_PLUGINS: ${PREINSTALL_NVIM_PLUGINS:-true}
     image: ${AGENTBOX_IMAGE:-agentbox:local}
     container_name: ${AGENTBOX_NAME:-agentbox}
@@ -48,9 +49,10 @@ services:
       AGENTBOX_BANNER: ${AGENTBOX_BANNER:-always}
       AGENTBOX_BANNER_BY: ${AGENTBOX_BANNER_BY:-}
       AGENTBOX_HERDR_INTEGRATIONS: ${AGENTBOX_HERDR_INTEGRATIONS:-1}
-      # The daemon inside: auto (start it when the host allows it), on (a box
-      # without Docker refuses to boot), off (never start it).
-      AGENTBOX_DOCKER: ${AGENTBOX_DOCKER:-auto}
+      # The daemon inside: install (get it on first boot, then run it), auto
+      # (run it only if something already installed it), on (a box without
+      # Docker refuses to boot), off (never).
+      AGENTBOX_DOCKER: ${AGENTBOX_DOCKER:-install}
       # --- persistence beyond the home ---
       # apt installs and edits to /usr/local, /opt and /etc are recorded and
       # replayed on boot. 0 turns that off (only /home/dev survives then).
