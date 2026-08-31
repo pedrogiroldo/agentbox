@@ -82,18 +82,27 @@ preflight() {
     fi
 }
 
-# /var/lib/docker on the container's own overlayfs means overlay2 is out and
-# the daemon silently falls back to vfs: every layer copied in full, gigabytes
-# and minutes for what should be seconds. A named volume is a real filesystem.
-check_storage() {
+# /var/lib/docker on the container's own overlayfs means overlay cannot stack
+# there. Docker 29 defaults to the containerd snapshotter, which does *not*
+# fall back on its own -- it takes the image fine and then dies on every
+# `docker run` with
+#
+#     failed to mount ... fstype: overlay ... err: invalid argument
+#
+# so the fallback has to be asked for: the older graphdriver, with vfs. That
+# works, and it copies every layer in full -- gigabytes and minutes for what
+# should be seconds. Mounting a volume is the actual fix, and this says so.
+# Prints the extra dockerd arguments, if any.
+storage_args() {
     local fstype
     fstype="$(stat -f -c %T "$DATA_ROOT" 2>/dev/null)" || return 0
-    if [ "$fstype" = "overlayfs" ]; then
-        warn "$DATA_ROOT sits on the container filesystem, so Docker will fall back
-       to the vfs storage driver (slow, and it eats disk). Mount a volume there:
-       'agentbox-docker:/var/lib/docker' in docker-compose.yml. Images also
-       survive a recreate that way."
-    fi
+    [ "$fstype" = "overlayfs" ] || return 0
+
+    warn "$DATA_ROOT is on the container filesystem, where overlay cannot stack.
+       Falling back to the vfs storage driver: it works, but every image layer
+       is copied in full and nothing survives a recreate. Mount a volume there
+       — 'agentbox-docker:/var/lib/docker' in docker-compose.yml."
+    printf '%s' "--feature containerd-snapshotter=false --storage-driver=vfs"
 }
 
 # Only ever runs on a box that does not have the engine yet: after this, the
@@ -161,12 +170,13 @@ start() {
     fi
 
     preflight
-    check_storage
 
     install -d -m 0755 "$LOG_DIR"
+    # Word-split on purpose: storage_args prints zero or two flags.
+    read -r -a extra_args <<< "$(storage_args)"
     log "starting the docker daemon (log: $LOG)"
 
-    dockerd >>"$LOG" 2>&1 &
+    dockerd "${extra_args[@]}" >>"$LOG" 2>&1 &
     echo $! > "$PIDFILE"
 
     local waited=0

@@ -73,8 +73,9 @@ services:
       # you changed outside the home. Wipe both volumes for a fresh start.
       - agentbox-state:/var/lib/agentbox
       # The box's own Docker images and containers. Without this they land on
-      # the container filesystem: Docker falls back to the vfs driver (slow,
-      # and it eats disk) and everything is gone on the next recreate.
+      # the container filesystem, where overlay cannot stack: Docker drops to
+      # the vfs driver (slow, and it eats disk) and everything is gone on the
+      # next recreate.
       - agentbox-docker:/var/lib/docker
       # Instead of running its own, the box can borrow the host's daemon —
       # mount this and the one inside steps aside. See docs/docker.md.
@@ -84,7 +85,7 @@ services:
     # mount filesystems or write cgroups without it, and there is no smaller
     # capability set that works. It also makes the box as trusted as the host
     # it runs on (docs/security.md). For a box that cannot reach the host,
-    # drop this line and build with INSTALL_DOCKER_ENGINE=false.
+    # drop this line and set AGENTBOX_DOCKER=off above.
     privileged: true
 
     # Agents spawn a lot of short-lived processes; give the box room to breathe.

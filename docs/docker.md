@@ -84,9 +84,13 @@ The other required line is the volume:
 ```
 
 Without it Docker's data directory lands on the container's own overlayfs,
-overlay2 refuses to stack there, and the daemon falls back to `vfs`: every
-layer copied in full, gigabytes and minutes for what should be seconds. Images
-also vanish on the next recreate. The boot warns when it sees this.
+where overlay cannot stack. Docker 29 defaults to the containerd snapshotter,
+which does not work around that on its own — it pulls an image happily and then
+fails every `docker run` with `failed to mount ... err: invalid argument`. The
+boot notices the filesystem first and asks for the old graphdriver with `vfs`
+instead, which works and copies every image layer in full: gigabytes and
+minutes for what should be seconds, and gone on the next recreate anyway. Mount
+the volume.
 
 ## Turning it off
 
@@ -156,5 +160,5 @@ back if you bind-mount a *host* socket that appeared after boot, so `dev` never
 joined its group — recreate the container, or `sudo usermod -aG docker dev` and
 log in again.
 
-**Docker is using the `vfs` storage driver** — the `agentbox-docker` volume is
-not mounted. See above.
+**The boot warns about `vfs`, and pulls are slow** — the `agentbox-docker`
+volume is not mounted, so Docker is running on the fallback driver. See above.
