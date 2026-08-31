@@ -11,6 +11,7 @@ SSH_HOST ?= localhost
 SSH_USER ?= dev
 VOLUME   ?= $(or $(call env_value,AGENTBOX_VOLUME),agentbox-home)
 STATE    ?= $(or $(call env_value,AGENTBOX_STATE_VOLUME),agentbox-state)
+DOCKER_VOL ?= $(or $(call env_value,AGENTBOX_DOCKER_VOLUME),agentbox-docker)
 SERVICE  ?= agentbox
 IMAGE    ?= $(or $(call env_value,AGENTBOX_IMAGE),agentbox:local)
 
@@ -97,15 +98,18 @@ restore: ## Restore a backup: make restore FILE=... [VOLUME=agentbox-state]
 test: build ## Boot the image and check that persistence really works
 	tests/persistence.sh $(IMAGE)
 
+test-docker: build ## Check the box's own Docker daemon end to end
+	tests/docker.sh $(IMAGE)
+
 persist: ## Show what survives a recreate (packages and files kept)
 	$(COMPOSE) exec $(SERVICE) agentbox-persist status
 
 destroy: ## Delete the container AND both volumes — the fresh start (irreversible)
-	@echo "This deletes '$(VOLUME)' (your home) and '$(STATE)' (packages and"
-	@echo "system changes), and everything in them. The box comes back as a"
-	@echo "plain image."
+	@echo "This deletes '$(VOLUME)' (your home), '$(STATE)' (packages and"
+	@echo "system changes) and '$(DOCKER_VOL)' (Docker images and containers),"
+	@echo "and everything in them. The box comes back as a plain image."
 	@read -r -p "Type the volume name to confirm: " answer; \
 	  [ "$$answer" = "$(VOLUME)" ] || { echo "aborted"; exit 1; }
 	$(COMPOSE) down -v
 
-.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test persist destroy
+.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test test-docker persist destroy

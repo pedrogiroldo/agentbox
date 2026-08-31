@@ -69,7 +69,8 @@ transforma "abrir o terminal no celular" em algo que faz sentido.
 | **Editor** | Neovim + LazyVim, com **modo mobile** automático |
 | **Tema** | [Vesper](https://github.com/datsfilipe/vesper.nvim) no Herdr e no Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
-| **Ferramentas** | git, git-lfs, gh (GitHub CLI), ripgrep, fd, fzf, jq, build-essential, Docker CLI |
+| **Ferramentas** | git, git-lfs, gh (GitHub CLI), ripgrep, fd, fzf, jq, build-essential |
+| **Docker** | daemon próprio, ligado por padrão — a caixa roda containers sozinha ([docs/docker.md](docs/docker.md)) |
 
 ## Começando
 
@@ -168,9 +169,12 @@ colocando um servidor SSH na internet: a porta padrão é `2222`, restrinja a
 origem no firewall, e se puder, não exponha nada — coloque o host numa rede
 Tailscale/WireGuard e publique a porta só no IP privado.
 
-Duas coisas merecem leitura antes: montar o socket do Docker dá acesso
-equivalente a root **no host**, e as credenciais dos agentes ficam em texto
-claro no volume. [docs/security.md](docs/security.md) explica o resto.
+Duas coisas merecem leitura antes. A caixa roda com `privileged: true` — é o
+que o daemon de Docker de dentro exige — e isso dá acesso equivalente a root
+**no host**; suba ela numa máquina que já é sua.
+[docs/docker.md](docs/docker.md) mostra como abrir mão disso se você preferir.
+A outra: as credenciais dos agentes ficam em texto claro no volume.
+[docs/security.md](docs/security.md) explica o resto.
 
 ## Personalizando
 
@@ -194,7 +198,8 @@ claro no volume. [docs/security.md](docs/security.md) explica o resto.
 - [Persistência](docs/persistence.md) — o que sobrevive, provisionamento, backup
 - [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, várias caixas
 - [Agentes](docs/agents.md) — login, integrações, rodar vários em paralelo
-- [Segurança](docs/security.md) — exposição, socket do Docker, raio de alcance
+- [Docker](docs/docker.md) — o daemon de dentro, o container privilegiado, as alternativas
+- [Segurança](docs/security.md) — exposição, Docker, raio de alcance
 
 ## Créditos
 

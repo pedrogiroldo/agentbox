@@ -68,7 +68,8 @@ what makes "open a terminal on your phone" a reasonable thing to do.
 | **Editor** | Neovim + LazyVim with an automatic **mobile mode** |
 | **Theme** | [Vesper](https://github.com/datsfilipe/vesper.nvim) in both Herdr and Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
-| **Tools** | git, git-lfs, gh, ripgrep, fd, fzf, jq, build-essential, Docker CLI |
+| **Tools** | git, git-lfs, gh, ripgrep, fd, fzf, jq, build-essential |
+| **Docker** | its own daemon, on by default — the box runs containers by itself ([docs/docker.md](docs/docker.md)) |
 
 ## Getting started
 
@@ -165,9 +166,12 @@ on the internet, though: the default port is `2222`, restrict the source in
 your firewall, and if you can, expose nothing at all — put the host on a
 Tailscale/WireGuard network and bind the port to the private address.
 
-Two things deserve a read first: mounting the Docker socket grants
-root-equivalent access **to the host**, and agent credentials sit in the volume
-in plaintext. [docs/security.md](docs/security.md) has the rest.
+Two things deserve a read first. The box runs with `privileged: true` — what
+the Docker daemon inside it needs — and that is root-equivalent access **to the
+host**, so run it on a machine that is already yours;
+[docs/docker.md](docs/docker.md) shows how to give that up if you would rather.
+The other: agent credentials sit in the volume in plaintext.
+[docs/security.md](docs/security.md) has the rest.
 
 ## Customizing
 
@@ -191,7 +195,8 @@ in plaintext. [docs/security.md](docs/security.md) has the rest.
 - [Persistence](docs/persistence.md) — what survives, provisioning, backups
 - [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, multiple boxes
 - [Agents](docs/agents.md) — logging in, integrations, running several at once
-- [Security](docs/security.md) — exposure, the Docker socket, blast radius
+- [Docker](docs/docker.md) — the daemon inside, the privileged container, the alternatives
+- [Security](docs/security.md) — exposure, Docker, blast radius
 
 ## Credits
 

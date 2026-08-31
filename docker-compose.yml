@@ -13,12 +13,17 @@ services:
         CODEX_VERSION: ${CODEX_VERSION:-latest}
         OPENCODE_VERSION: ${OPENCODE_VERSION:-latest}
         INSTALL_DOCKER_CLI: ${INSTALL_DOCKER_CLI:-true}
+        # The box's own Docker daemon. false builds a client-only box — see
+        # docs/docker.md for what you give up and what you get back.
+        INSTALL_DOCKER_ENGINE: ${INSTALL_DOCKER_ENGINE:-true}
         PREINSTALL_NVIM_PLUGINS: ${PREINSTALL_NVIM_PLUGINS:-true}
     image: ${AGENTBOX_IMAGE:-agentbox:local}
     container_name: ${AGENTBOX_NAME:-agentbox}
     hostname: ${AGENTBOX_HOSTNAME:-agentbox}
     restart: unless-stopped
-    stop_grace_period: 30s
+    # On the way out the box stops your containers, then saves its system
+    # layer. Both need time; this is the budget for the two of them.
+    stop_grace_period: ${AGENTBOX_STOP_GRACE:-90s}
 
     ports:
       # host:container — connect with `ssh -p 2222 dev@<host>`
@@ -43,6 +48,9 @@ services:
       AGENTBOX_BANNER: ${AGENTBOX_BANNER:-always}
       AGENTBOX_BANNER_BY: ${AGENTBOX_BANNER_BY:-}
       AGENTBOX_HERDR_INTEGRATIONS: ${AGENTBOX_HERDR_INTEGRATIONS:-1}
+      # The daemon inside: auto (start it when the host allows it), on (a box
+      # without Docker refuses to boot), off (never start it).
+      AGENTBOX_DOCKER: ${AGENTBOX_DOCKER:-auto}
       # --- persistence beyond the home ---
       # apt installs and edits to /usr/local, /opt and /etc are recorded and
       # replayed on boot. 0 turns that off (only /home/dev survives then).
@@ -62,9 +70,20 @@ services:
       # The system layer: your apt packages (list + .deb cache) and the files
       # you changed outside the home. Wipe both volumes for a fresh start.
       - agentbox-state:/var/lib/agentbox
-      # Optional: talk to the host's Docker daemon from inside the box.
-      # This is root-equivalent access to the host — read docs/security.md.
+      # The box's own Docker images and containers. Without this they land on
+      # the container filesystem: Docker falls back to the vfs driver (slow,
+      # and it eats disk) and everything is gone on the next recreate.
+      - agentbox-docker:/var/lib/docker
+      # Instead of running its own, the box can borrow the host's daemon —
+      # mount this and the one inside steps aside. See docs/docker.md.
       # - /var/run/docker.sock:/var/run/docker.sock
+
+    # What the daemon inside needs: a container may not create namespaces,
+    # mount filesystems or write cgroups without it, and there is no smaller
+    # capability set that works. It also makes the box as trusted as the host
+    # it runs on (docs/security.md). For a box that cannot reach the host,
+    # drop this line and build with INSTALL_DOCKER_ENGINE=false.
+    privileged: true
 
     # Agents spawn a lot of short-lived processes; give the box room to breathe.
     # Uncomment and tune for your server.
@@ -79,3 +98,7 @@ volumes:
     name: ${AGENTBOX_VOLUME:-agentbox-home}
   agentbox-state:
     name: ${AGENTBOX_STATE_VOLUME:-agentbox-state}
+  # Docker's own data: images, containers, its volumes. Big, and rebuildable —
+  # this is the one of the three you can delete without losing your work.
+  agentbox-docker:
+    name: ${AGENTBOX_DOCKER_VOLUME:-agentbox-docker}

@@ -67,3 +67,8 @@ jobs:
 
       - name: Persistence smoke test
         run: tests/persistence.sh agentbox:test
+
+      # The daemon inside the box: that it refuses to start without privileges
+      # instead of half-starting, and that it runs a real container with them.
+      - name: Docker smoke test
+        run: tests/docker.sh agentbox:test

@@ -10,7 +10,14 @@ services:
     container_name: agentbox
     hostname: agentbox
     restart: unless-stopped
-    stop_grace_period: 30s
+    # Stopping your containers, then saving the system layer.
+    stop_grace_period: 90s
+
+    # The published image brings its own Docker daemon, and a daemon needs
+    # this to run anything. It also makes the box as trusted as the host —
+    # docs/security.md. Drop it and set AGENTBOX_DOCKER=off for a box that
+    # cannot reach the host; everything else still works.
+    privileged: true
 
     ports:
       - "2222:22"
@@ -29,7 +36,12 @@ services:
       # apt packages and edits outside the home, replayed on every boot.
       # Deleting both volumes is what "start over" means.
       - agentbox-state:/var/lib/agentbox
+      # Docker's images and containers, kept across a recreate.
+      - agentbox-docker:/var/lib/docker
+      # Borrow the host's daemon instead of running one here — docs/docker.md.
+      # - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   agentbox-home:
   agentbox-state:
+  agentbox-docker:

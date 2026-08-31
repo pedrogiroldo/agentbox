@@ -24,6 +24,10 @@ ARG CODEX_VERSION=latest
 ARG OPENCODE_VERSION=latest
 
 ARG INSTALL_DOCKER_CLI=true
+# The daemon, so the box is its own Docker host and `docker run` just works.
+# On by default; it needs a privileged container to actually run -- that is
+# what docker-compose.yml ships, and docs/docker.md explains the trade.
+ARG INSTALL_DOCKER_ENGINE=true
 ARG PREINSTALL_NVIM_PLUGINS=true
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -68,9 +72,15 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Docker CLI — only useful when you bind-mount the host's docker socket.
-# The daemon is NOT installed; see docs/security.md before mounting the socket.
-RUN if [ "$INSTALL_DOCKER_CLI" = "true" ]; then \
+# Docker — two shapes, and the build arg picks one.
+#
+#   INSTALL_DOCKER_CLI     the client only. Useless on its own: it needs a
+#                          daemon somewhere, either the host's socket
+#                          bind-mounted in or a remote one in DOCKER_HOST.
+#   INSTALL_DOCKER_ENGINE  the daemon too, so the box is its own Docker host.
+#                          Implies the CLI. Costs ~400 MB and, at run time, a
+#                          privileged container -- read docs/security.md first.
+RUN if [ "$INSTALL_DOCKER_CLI" = "true" ] || [ "$INSTALL_DOCKER_ENGINE" = "true" ]; then \
         install -m 0755 -d /etc/apt/keyrings \
         && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
              -o /etc/apt/keyrings/docker.asc \
@@ -78,7 +88,15 @@ RUN if [ "$INSTALL_DOCKER_CLI" = "true" ]; then \
         && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" \
              > /etc/apt/sources.list.d/docker.list \
         && apt-get update \
-        && apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin \
+        && if [ "$INSTALL_DOCKER_ENGINE" = "true" ]; then \
+               apt-get install -y --no-install-recommends \
+                   docker-ce docker-ce-cli containerd.io \
+                   docker-buildx-plugin docker-compose-plugin \
+                   iptables uidmap; \
+           else \
+               apt-get install -y --no-install-recommends \
+                   docker-ce-cli docker-buildx-plugin docker-compose-plugin; \
+           fi \
         && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -159,12 +177,14 @@ COPY image/etc/make-motd.sh /usr/local/bin/agentbox-make-motd
 COPY image/etc/banner.sh /usr/local/bin/agentbox-banner
 COPY image/etc/greet.sh /etc/agentbox/greet.sh
 COPY image/etc/persist.sh /usr/local/bin/agentbox-persist
+COPY image/etc/dockerd.sh /usr/local/bin/agentbox-dockerd
 COPY image/entrypoint.sh /usr/local/bin/agentbox-entrypoint
 COPY image/skel/ /opt/agentbox/skel/
 
 RUN set -eux; \
     chmod +x /usr/local/bin/agentbox-entrypoint /usr/local/bin/agentbox-make-motd \
-        /usr/local/bin/agentbox-banner /usr/local/bin/agentbox-persist; \
+        /usr/local/bin/agentbox-banner /usr/local/bin/agentbox-persist \
+        /usr/local/bin/agentbox-dockerd; \
     # /etc/agentbox/greet.sh prints the banner and the motd, in that order.
     # PAM would print the motd first (plus Ubuntu's motd-news noise), so mute it.
     sed -i 's/^session\s*optional\s*pam_motd/# &/' /etc/pam.d/sshd; \

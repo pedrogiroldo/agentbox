@@ -49,24 +49,37 @@ sshd runs with `-e`, so it logs to stderr.
 rewritten from the environment on every boot, so removing a key there actually
 removes it.
 
-## The Docker socket
+## Docker, and the privileged container
 
-`docker-compose.yml` has a commented line that bind-mounts
-`/var/run/docker.sock`. It is convenient — the box can run databases,
-`docker compose` for your project, anything.
+**Read this one.** The box ships with its own Docker daemon, and a daemon
+inside a container only runs if that container is privileged — so
+`docker-compose.yml` sets `privileged: true`.
 
-It is also **root-equivalent access to the host**. Anyone (or any agent) inside
-the container can start a privileged container that mounts `/` from the host.
-There is no partial version of this: mounting the socket means the box is as
-trusted as the host. Mount it only on a machine where that is already true.
+That is **root-equivalent access to the host**. A privileged container can
+mount the host's disk, load kernel modules and step out of its own isolation;
+anyone with a shell in the box, agents included, can do it. Mounting
+`/var/run/docker.sock` instead lands in exactly the same place by a different
+road. There is no partial version of either: the box is as trusted as the
+machine under it, so run it on a machine where that is already true — your own
+VPS, not a host shared with anything you would not hand over.
+
+[docker.md](docker.md) has the why (no smaller capability set works, and
+rootless mode needs the same namespaces) and, if this is not a trade you want,
+the two ways to give it up:
+
+- `INSTALL_DOCKER_ENGINE=false` plus deleting the `privileged: true` line —
+  the container goes back to being the sandbox
+- `DOCKER_HOST` pointed at a daemon on another machine, ideally a throwaway VM,
+  which keeps containers available and the blast radius elsewhere
 
 ## Agents and blast radius
 
 Coding agents run commands. That is the point of them. Inside agentbox they can
 do anything the `dev` user can do, which is everything in the container.
 
-- The container **is** the sandbox. Keep it that way: no socket mount, no
-  `privileged`, no bind mount of host paths you care about.
+- The container is only a sandbox while it is unprivileged, and by default it
+  is not (see above). If you want it to be one, turn Docker off — and then keep
+  it that way: no socket mount, no bind mount of host paths you care about.
 - Agent credentials sit in the volume in plaintext (they are session tokens or
   API keys). Anyone with the volume, or a backup of it, has your accounts.
   Treat `make backup` output like a password file.

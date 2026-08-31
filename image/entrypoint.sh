@@ -205,15 +205,27 @@ if [ -n "${GIT_USER_NAME:-}" ];  then as_user git config --global user.name  "$G
 if [ -n "${GIT_USER_EMAIL:-}" ]; then as_user git config --global user.email "$GIT_USER_EMAIL"; fi
 
 # ---------------------------------------------------------------------------
-# 8. Docker socket: give the user access when the host socket is bind-mounted
+# 8. Docker
+#
+# The box gets a daemon one of two ways: a socket bind-mounted from the host,
+# or its own engine when the image was built with INSTALL_DOCKER_ENGINE=true
+# (that one needs a privileged container -- see docs/docker.md). Whichever it
+# is, it ends as a socket on the same path, so the group dance below is one
+# code path: whoever owns the socket, $USER_NAME joins them.
 # ---------------------------------------------------------------------------
+if ! agentbox-dockerd start; then
+    [ "${AGENTBOX_DOCKER:-auto}" != "on" ] \
+        || die "AGENTBOX_DOCKER=on but the daemon could not start (reason above)"
+    warn "no docker in this box (reason above) — the rest of the boot continues"
+fi
+
 if [ -S /var/run/docker.sock ]; then
     sock_gid="$(stat -c %g /var/run/docker.sock)"
     if ! getent group "$sock_gid" >/dev/null; then
         groupadd -g "$sock_gid" dockerhost
     fi
     usermod -aG "$(getent group "$sock_gid" | cut -d: -f1)" "$USER_NAME"
-    log "docker socket detected — $USER_NAME can talk to the host daemon"
+    log "docker socket ready — $USER_NAME can use it"
 fi
 
 # ---------------------------------------------------------------------------
@@ -279,6 +291,9 @@ sshd_pid=$!
 on_shutdown() {
     trap '' TERM INT
     kill -TERM "$sshd_pid" 2>/dev/null || true
+    # Before the state save: containers are writing too, and a daemon killed
+    # with the container is a daemon that never flushed them.
+    agentbox-dockerd stop || warn "the docker daemon did not stop cleanly"
     if [ "${AGENTBOX_PERSIST:-1}" != "0" ]; then
         log "saving what changed since the last pass"
         agentbox-persist save || warn "the final save did not finish"
