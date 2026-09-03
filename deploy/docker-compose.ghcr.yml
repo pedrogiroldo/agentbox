@@ -33,6 +33,11 @@ services:
       # install (default): the first boot fetches the Docker engine, and the
       # state volume keeps it from then on. off: no daemon, no download.
       AGENTBOX_DOCKER: "install"
+      # What a client outside dials to mirror a project onto a laptop
+      # (docs/mirror.md). The box cannot know its own address; leave the host
+      # empty and `agentbox-mirror` prints a placeholder instead.
+      AGENTBOX_SSH_HOST: ""
+      AGENTBOX_SSH_PORT: "2222"
 
     volumes:
       - agentbox-home:/home/dev

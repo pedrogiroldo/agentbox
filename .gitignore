@@ -1,3 +1,4 @@
 .env
 backups/
+mirrors/
 *.tar.gz

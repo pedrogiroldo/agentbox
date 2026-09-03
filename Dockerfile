@@ -186,13 +186,14 @@ COPY image/etc/banner.sh /usr/local/bin/agentbox-banner
 COPY image/etc/greet.sh /etc/agentbox/greet.sh
 COPY image/etc/persist.sh /usr/local/bin/agentbox-persist
 COPY image/etc/dockerd.sh /usr/local/bin/agentbox-dockerd
+COPY image/etc/mirror.sh /usr/local/bin/agentbox-mirror
 COPY image/entrypoint.sh /usr/local/bin/agentbox-entrypoint
 COPY image/skel/ /opt/agentbox/skel/
 
 RUN set -eux; \
     chmod +x /usr/local/bin/agentbox-entrypoint /usr/local/bin/agentbox-make-motd \
         /usr/local/bin/agentbox-banner /usr/local/bin/agentbox-persist \
-        /usr/local/bin/agentbox-dockerd; \
+        /usr/local/bin/agentbox-dockerd /usr/local/bin/agentbox-mirror; \
     # /etc/agentbox/greet.sh prints the banner and the motd, in that order.
     # PAM would print the motd first (plus Ubuntu's motd-news noise), so mute it.
     sed -i 's/^session\s*optional\s*pam_motd/# &/' /etc/pam.d/sshd; \

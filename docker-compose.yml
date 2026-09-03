@@ -37,6 +37,13 @@ services:
       # --- access ---
       SSH_PUBLIC_KEY: ${SSH_PUBLIC_KEY:-}
       AGENTBOX_PASSWORD: ${AGENTBOX_PASSWORD:-}
+      # --- mirroring ---
+      # What a client *outside* dials to reach this box. The container cannot
+      # know it — the port mapping and any proxy live out here — so
+      # agentbox-mirror prints a placeholder until you fill this in.
+      AGENTBOX_SSH_HOST: ${AGENTBOX_SSH_HOST:-}
+      # The published port, not the container's 22: it is what gets dialed.
+      AGENTBOX_SSH_PORT: ${AGENTBOX_SSH_PORT:-${SSH_PORT:-2222}}
       # --- identity ---
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}

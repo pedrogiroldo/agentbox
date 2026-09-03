@@ -86,6 +86,10 @@ do anything the `dev` user can do, which is everything in the container.
 - The agents can push to any repository your keys reach. Consider a dedicated
   SSH key or a scoped GitHub token for the box instead of copying your main
   key in.
+- A mirror ([mirror.md](mirror.md)) copies a project out of the box and onto
+  your laptop, live — including whatever an agent checked out into it. The
+  laptop is then part of the same blast radius, and a deletion in the box
+  propagates to it, so a mirror is not a backup.
 
 ## What agentbox does not do
 

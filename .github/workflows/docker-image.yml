@@ -72,3 +72,8 @@ jobs:
       # instead of half-starting, and that it runs a real container with them.
       - name: Docker smoke test
         run: tests/docker.sh agentbox:test
+
+      # Mirroring: that the endpoint survives sshd building a fresh session,
+      # and that the command the box prints is the one you can actually paste.
+      - name: Mirror smoke test
+        run: tests/mirror.sh agentbox:test
