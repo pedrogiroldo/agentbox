@@ -70,6 +70,7 @@ what makes "open a terminal on your phone" a reasonable thing to do.
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Tools** | git, git-lfs, gh, ripgrep, fd, fzf, jq, build-essential |
 | **Docker** | its own daemon, installed on the first boot — the box runs containers by itself ([docs/docker.md](docs/docker.md)) |
+| **Mirroring** | `agentbox-mirror` puts a project on your laptop too, live, for the code that has to run on real hardware ([docs/mirror.md](docs/mirror.md)) |
 
 ## Getting started
 
@@ -158,6 +159,32 @@ port `2222:22`. SSH is raw TCP, so the platform's HTTP proxy is not involved.
 
 Step by step in [docs/deploy.md](docs/deploy.md).
 
+## Code that has to run on your hardware
+
+Agents write the code in the box. An Android build, a USB device or a GPU is
+somewhere else — and forwarding a port does not help, because the problem is
+not reaching a server inside the box, it is that the build cannot happen there
+at all.
+
+So mirror the project: the same tree, live, on both sides, over the SSH
+connection you already have.
+
+```sh
+# in the box — prints the command to paste on your machine
+agentbox-mirror myapp
+
+# or, if you cloned this repository
+make mirror PROJECT=myapp LOCAL=~/src/myapp
+```
+
+The agent edits in the box, `./gradlew installDebug` runs on your desk, and a
+fix you make locally is back in the box a second later. Build output
+(`build/`, `.gradle/`, `node_modules/`) is ignored by default; `.git` is not.
+It needs [Mutagen](https://mutagen.io) on your machine and nothing in the box.
+
+The Android walkthrough, the ignore defaults and what happens when both sides
+edit the same file are in [docs/mirror.md](docs/mirror.md).
+
 ## Security
 
 The container refuses to boot with no key configured, accepts key
@@ -196,6 +223,7 @@ The other: agent credentials sit in the volume in plaintext.
 - [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, multiple boxes
 - [Agents](docs/agents.md) — logging in, integrations, running several at once
 - [Docker](docs/docker.md) — the daemon inside, the privileged container, the alternatives
+- [Mirroring](docs/mirror.md) — the same project on your laptop, Android builds, ignores
 - [Security](docs/security.md) — exposure, Docker, blast radius
 
 ## Credits

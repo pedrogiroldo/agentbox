@@ -13,6 +13,7 @@ cat > /etc/motd <<EOF
   claude $(ver claude --version | awk '{print $1}')     codex $(ver codex --version | awk '{print $NF}')     opencode $(ver opencode --version)
   nvim $(ver nvim --version | awk '{print $2}')      node $(ver node --version)   bun $(ver bun --version)   uv $(ver uv --version | awk '{print $2}')
 
+  agentbox-mirror            same project here and on your laptop
   ~/projects                 your repositories (persistent)
   ~/.agentbox/provision.sh   packages that must survive a rebuild
   ~/.agentbox/provision.log  what it printed last boot

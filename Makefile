@@ -9,6 +9,11 @@ env_value = $(shell [ -f .env ] && grep -E '^$(1)=' .env | tail -1 | cut -d= -f2
 SSH_PORT ?= $(or $(call env_value,SSH_PORT),2222)
 SSH_HOST ?= localhost
 SSH_USER ?= dev
+# What a mirror dials. `make ssh` reaches the box over the published port on
+# this machine; a mirror is created from wherever you are, so it needs the
+# address the box answers to — AGENTBOX_SSH_HOST when .env names one.
+MIRROR_HOST ?= $(or $(call env_value,AGENTBOX_SSH_HOST),$(SSH_HOST))
+MIRROR_PORT ?= $(or $(call env_value,AGENTBOX_SSH_PORT),$(SSH_PORT))
 VOLUME   ?= $(or $(call env_value,AGENTBOX_VOLUME),agentbox-home)
 STATE    ?= $(or $(call env_value,AGENTBOX_STATE_VOLUME),agentbox-state)
 DOCKER_VOL ?= $(or $(call env_value,AGENTBOX_DOCKER_VOLUME),agentbox-docker)
@@ -95,11 +100,78 @@ restore: ## Restore a backup: make restore FILE=... [VOLUME=agentbox-state]
 	  ubuntu:24.04 tar xzf "/backup/$$(basename $(FILE))" -C /data
 	$(COMPOSE) up -d
 
+# ---------------------------------------------------------------------------
+# Mirroring — the same project here and in the box (docs/mirror.md)
+#
+# Inside the box `agentbox-mirror` prints these commands for you to paste.
+# Here you already have the endpoint in .env, so printing it would be a step
+# too many. Mutagen runs on this machine: the box is only the far end.
+# ---------------------------------------------------------------------------
+# The one ignore list, read out of the script the image ships, so the two sides
+# cannot drift apart.
+MIRROR_IGNORES = $(shell sed -n "s/^IGNORES='\(.*\)'$$/\1/p" image/etc/mirror.sh)
+LOCAL ?= mirrors/$(PROJECT)
+
+# Same rule the box uses: lowercase, and anything Mutagen will not take in a
+# session name becomes a dash.
+mirror_session = agentbox-$(shell printf '%s' "$(PROJECT)" | tr '[:upper:]' '[:lower:]' \
+                   | sed -e 's/[^a-z0-9_-]\+/-/g' -e 's/-\+/-/g' -e 's/^-//' -e 's/-$$//')
+
+# A "command not found" from make is a worse answer than saying where to get it.
+define need_mutagen
+	@command -v mutagen >/dev/null 2>&1 || { \
+	  echo "mutagen is not installed on this machine — it is the client, and it"; \
+	  echo "runs here, not in the box. Install it with one of:"; \
+	  echo ""; \
+	  echo "  macOS    brew install mutagen-io/mutagen/mutagen"; \
+	  echo "  Linux    untar the release for your architecture from"; \
+	  echo "           https://github.com/mutagen-io/mutagen/releases into ~/.local/bin"; \
+	  echo "  Windows  scoop install mutagen"; \
+	  echo ""; \
+	  echo "See docs/mirror.md."; \
+	  exit 1; \
+	}
+endef
+
+mirror: ## Mirror a project onto this machine: make mirror PROJECT=app [LOCAL=path]
+	$(need_mutagen)
+	@test -n "$(PROJECT)" || { echo "usage: make mirror PROJECT=<name> [LOCAL=<path>]"; exit 1; }
+	@mkdir -p "$(LOCAL)"
+	mutagen sync create \
+	  --name=$(mirror_session) \
+	  --ignore='$(MIRROR_IGNORES)' \
+	  "$(LOCAL)" \
+	  "$(SSH_USER)@$(MIRROR_HOST):$(MIRROR_PORT):/home/$(SSH_USER)/projects/$(PROJECT)"
+	@echo
+	@echo "mirroring /home/$(SSH_USER)/projects/$(PROJECT) into $(LOCAL)"
+	@echo "watch the first sync with: mutagen sync monitor $(mirror_session)"
+
+mirror-status: ## Show the mirrors this repository created
+	$(need_mutagen)
+	@# Sessions belong to the local daemon, not to this repository: this only
+	@# filters the ones named with the box's prefix, and a session renamed by
+	@# hand drops out of the view. `mutagen sync list` is the whole truth.
+	@out="$$(mutagen sync list 2>/dev/null | awk ' \
+	    /^-{10,}$$/ { if (keep) printf "%s", block; block=""; keep=0; next } \
+	    { block = block $$0 "\n"; if ($$0 ~ /^Name: agentbox-/) keep = 1 } \
+	    END { if (keep) printf "%s", block }')"; \
+	  if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
+	  else echo "no agentbox mirrors right now — 'mutagen sync list' shows every session"; fi
+
+unmirror: ## Stop mirroring a project (neither copy is deleted): make unmirror PROJECT=app
+	$(need_mutagen)
+	@test -n "$(PROJECT)" || { echo "usage: make unmirror PROJECT=<name>"; exit 1; }
+	mutagen sync terminate $(mirror_session)
+	@echo "stopped — both copies of the files are still there"
+
 test: build ## Boot the image and check that persistence really works
 	tests/persistence.sh $(IMAGE)
 
 test-docker: build ## Check the box's own Docker daemon end to end
 	tests/docker.sh $(IMAGE)
+
+test-mirror: build ## Check what the box tells you about mirroring
+	tests/mirror.sh $(IMAGE)
 
 persist: ## Show what survives a recreate (packages and files kept)
 	$(COMPOSE) exec $(SERVICE) agentbox-persist status
@@ -112,4 +184,4 @@ destroy: ## Delete the container AND both volumes — the fresh start (irreversi
 	  [ "$$answer" = "$(VOLUME)" ] || { echo "aborted"; exit 1; }
 	$(COMPOSE) down -v
 
-.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test test-docker persist destroy
+.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test test-docker test-mirror mirror mirror-status unmirror persist destroy

@@ -71,6 +71,7 @@ transforma "abrir o terminal no celular" em algo que faz sentido.
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Ferramentas** | git, git-lfs, gh (GitHub CLI), ripgrep, fd, fzf, jq, build-essential |
 | **Docker** | daemon próprio, instalado na primeira subida — a caixa roda containers sozinha ([docs/docker.md](docs/docker.md)) |
+| **Espelhamento** | `agentbox-mirror` coloca um projeto também no seu computador, ao vivo, para o código que precisa rodar em hardware de verdade ([docs/mirror.md](docs/mirror.md)) |
 
 ## Começando
 
@@ -161,6 +162,33 @@ história.
 
 Passo a passo em [docs/deploy.md](docs/deploy.md).
 
+## Código que precisa rodar no seu hardware
+
+Os agentes escrevem o código na caixa. Um build de Android, um aparelho no
+cabo USB ou uma GPU estão em outro lugar — e encaminhar uma porta não resolve,
+porque o problema não é alcançar um servidor que roda lá dentro: é que o build
+não acontece lá de jeito nenhum.
+
+Então espelhe o projeto: a mesma árvore, ao vivo, dos dois lados, pela conexão
+SSH que você já tem.
+
+```sh
+# dentro da caixa — imprime o comando para colar na sua máquina
+agentbox-mirror meuapp
+
+# ou, se você clonou este repositório
+make mirror PROJECT=meuapp LOCAL=~/src/meuapp
+```
+
+O agente edita na caixa, o `./gradlew installDebug` roda na sua mesa, e a
+correção que você faz localmente volta para a caixa um segundo depois. O que é
+saída de build (`build/`, `.gradle/`, `node_modules/`) fica de fora por padrão;
+o `.git` não. Precisa do [Mutagen](https://mutagen.io) na sua máquina e de nada
+dentro da caixa.
+
+O passo a passo do Android, os ignores padrão e o que acontece quando os dois
+lados editam o mesmo arquivo estão em [docs/mirror.md](docs/mirror.md).
+
 ## Segurança
 
 O container se recusa a subir sem nenhuma chave configurada, aceita só
@@ -199,6 +227,7 @@ A outra: as credenciais dos agentes ficam em texto claro no volume.
 - [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, várias caixas
 - [Agentes](docs/agents.md) — login, integrações, rodar vários em paralelo
 - [Docker](docs/docker.md) — o daemon de dentro, o container privilegiado, as alternativas
+- [Espelhamento](docs/mirror.md) — o mesmo projeto no seu computador, builds de Android, ignores
 - [Segurança](docs/security.md) — exposição, Docker, raio de alcance
 
 ## Créditos

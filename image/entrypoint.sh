@@ -90,7 +90,8 @@ fi
 # ---------------------------------------------------------------------------
 config_env=/etc/agentbox/config.env
 : > "$config_env"
-for var in LANG LC_ALL TZ AGENTBOX_BANNER AGENTBOX_BANNER_BY; do
+for var in LANG LC_ALL TZ AGENTBOX_BANNER AGENTBOX_BANNER_BY \
+           AGENTBOX_SSH_HOST AGENTBOX_SSH_PORT; do
     eval "value=\${$var:-}"
     [ -n "$value" ] || continue
     # Escape any embedded double quote; these values are short and tame.
