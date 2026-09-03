@@ -7,6 +7,13 @@ name: agentbox
 services:
   agentbox:
     image: ghcr.io/pedrogiroldo/agentbox:latest
+    # `latest` moves; `docker compose up` does not follow it. Compose pulls a
+    # tag only when the daemon does not already have it, so a second deploy
+    # silently reuses the old image -- and since the image id is unchanged, it
+    # does not even recreate the container. Dokploy deploys with
+    # `up -d --build`, which is a no-op for a service without a `build:`, so
+    # that is the default outcome there. Fetch on every deploy instead.
+    pull_policy: always
     container_name: agentbox
     hostname: agentbox
     restart: unless-stopped

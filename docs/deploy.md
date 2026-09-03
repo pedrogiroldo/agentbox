@@ -51,8 +51,33 @@ is what "start over" means. See [persistence.md](persistence.md).
 
 Pulling a newer image is safe: neither volume is ever mounted over the image,
 so an update brings you newer tooling while your packages and files are
-replayed on top. In Coolify, enable *Pull latest image on deploy* (or pin an
-immutable `:sha-xxxxxxx` tag) so the redeploy actually fetches it.
+replayed on top.
+
+The catch is getting the new image at all. `docker compose up` pulls a tag only
+when the daemon does not already have it, so the second deploy of `:latest`
+reuses the image from the first -- and because the image id never changed,
+compose leaves the running container alone. The deploy succeeds and nothing is
+new. Dokploy runs `up -d --build`, which does not help: with no `build:` in the
+service, `--build` has nothing to build.
+
+`deploy/docker-compose.ghcr.yml` ships `pull_policy: always` for exactly this.
+If you pasted the file before that line existed, add it, or pin an immutable
+`:sha-xxxxxxx` tag so each deploy names a different image. In Coolify, *Pull
+latest image on deploy* does the same thing from the UI.
+
+To confirm what a box is actually running:
+
+```sh
+docker inspect -f '{{index .RepoDigests 0}} {{.Created}}' agentbox
+```
+
+Compare the digest with the one on the package page. If it lags, force the
+issue once by hand:
+
+```sh
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml up -d --force-recreate
+```
 
 ### Building on the server vs. pulling an image
 
