@@ -70,8 +70,8 @@ transforma "abrir o terminal no celular" em algo que faz sentido.
 | **Tema** | [Vesper](https://github.com/datsfilipe/vesper.nvim) no Herdr e no Neovim |
 | **Runtimes** | Node.js, Bun, uv, Python 3 |
 | **Ferramentas** | git, git-lfs, gh (GitHub CLI), ripgrep, fd, fzf, jq, build-essential |
-| **Docker** | daemon próprio, instalado na primeira subida — a caixa roda containers sozinha ([docs/docker.md](docs/docker.md)) |
-| **Espelhamento** | `agentbox-mirror` coloca um projeto também no seu computador, ao vivo, para o código que precisa rodar em hardware de verdade ([docs/mirror.md](docs/mirror.md)) |
+| **Docker** | daemon próprio, instalado na primeira subida — o agentbox roda containers sozinho ([docs/docker.md](docs/docker.md)) |
+| **Espelhamento** | `agentbox-mirror` mantém o projeto ao vivo no seu computador também, para o código que só roda em hardware de verdade ([docs/mirror.md](docs/mirror.md)) |
 
 ## Começando
 
@@ -164,27 +164,33 @@ Passo a passo em [docs/deploy.md](docs/deploy.md).
 
 ## Código que precisa rodar no seu hardware
 
-Os agentes escrevem o código na caixa. Um build de Android, um aparelho no
-cabo USB ou uma GPU estão em outro lugar — e encaminhar uma porta não resolve,
-porque o problema não é alcançar um servidor que roda lá dentro: é que o build
-não acontece lá de jeito nenhum.
+Os agentes escrevem o código dentro do agentbox, mas nem todo código roda lá.
+Build de Android precisa do SDK e de um emulador com aceleração de hardware,
+`adb` precisa de um celular no cabo USB, CUDA precisa de GPU — e um VPS não
+tem nada disso.
 
-Então espelhe o projeto: a mesma árvore, ao vivo, dos dois lados, pela conexão
-SSH que você já tem.
+Encaminhar porta não resolve esse caso: o problema não é alcançar um servidor
+que já está rodando lá dentro, é que o build não tem como acontecer lá.
+
+A saída é espelhar o projeto: os mesmos arquivos, ao vivo, dos dois lados,
+pela mesma conexão SSH que você já usa.
 
 ```sh
-# dentro da caixa — imprime o comando para colar na sua máquina
+# dentro do agentbox — imprime o comando para você colar na sua máquina
 agentbox-mirror meuapp
 
 # ou, se você clonou este repositório
 make mirror PROJECT=meuapp LOCAL=~/src/meuapp
 ```
 
-O agente edita na caixa, o `./gradlew installDebug` roda na sua mesa, e a
-correção que você faz localmente volta para a caixa um segundo depois. O que é
-saída de build (`build/`, `.gradle/`, `node_modules/`) fica de fora por padrão;
-o `.git` não. Precisa do [Mutagen](https://mutagen.io) na sua máquina e de nada
-dentro da caixa.
+O agente edita no agentbox e a mudança chega no seu computador um segundo
+depois. Você roda `./gradlew installDebug` no aparelho de verdade, e a correção
+que fizer localmente volta para o agentbox na mesma velocidade. Saída de build
+(`build/`, `.gradle/`, `node_modules/`) fica de fora por padrão; o `.git` não,
+senão a cópia deixa de ser o mesmo repositório.
+
+O [Mutagen](https://mutagen.io) você instala na sua máquina — dentro do
+agentbox não precisa instalar nada.
 
 O passo a passo do Android, os ignores padrão e o que acontece quando os dois
 lados editam o mesmo arquivo estão em [docs/mirror.md](docs/mirror.md).
@@ -197,9 +203,9 @@ colocando um servidor SSH na internet: a porta padrão é `2222`, restrinja a
 origem no firewall, e se puder, não exponha nada — coloque o host numa rede
 Tailscale/WireGuard e publique a porta só no IP privado.
 
-Duas coisas merecem leitura antes. A caixa roda com `privileged: true` — é o
+Duas coisas merecem leitura antes. O agentbox roda com `privileged: true` — é o
 que o daemon de Docker de dentro exige — e isso dá acesso equivalente a root
-**no host**; suba ela numa máquina que já é sua.
+**no host**; suba ele numa máquina que já é sua.
 [docs/docker.md](docs/docker.md) mostra como abrir mão disso se você preferir.
 A outra: as credenciais dos agentes ficam em texto claro no volume.
 [docs/security.md](docs/security.md) explica o resto.
@@ -224,7 +230,7 @@ A outra: as credenciais dos agentes ficam em texto claro no volume.
 
 - [Uso no celular](docs/mobile.md) — cliente SSH, Herdr, Neovim em tela pequena
 - [Persistência](docs/persistence.md) — o que sobrevive, provisionamento, backup
-- [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, várias caixas
+- [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, várias instâncias
 - [Agentes](docs/agents.md) — login, integrações, rodar vários em paralelo
 - [Docker](docs/docker.md) — o daemon de dentro, o container privilegiado, as alternativas
 - [Espelhamento](docs/mirror.md) — o mesmo projeto no seu computador, builds de Android, ignores
