@@ -100,30 +100,45 @@ persistence layer captures) or into anything the box saves.
 ## Where the identity lives
 
 ```
-/var/lib/agentbox/tailscale/tailscaled.state
+/var/lib/agentbox/tailscale/
 ```
 
 Not `/var/lib/tailscale`, which is where the daemon puts it by default. That
-matters: `/var/lib` is neither a volume nor one of the paths
-`agentbox-persist` watches, so the default location loses the node identity on
-every recreate — the box comes back asking to be authenticated again, under a
-new name, with the old node left dangling in your admin console.
+matters: `/var/lib` is neither a volume nor one of the paths `agentbox-persist`
+watches, so the default location loses the node identity on every recreate — the
+box comes back asking to be authenticated again, under a new name, with the old
+node left dangling in your admin console.
+
+The whole directory, not just `tailscaled.state`. Beside the state file sit the
+TLS certificates `tailscale serve` fetches and the profile data; leaving those
+behind would mean re-fetching certificates against Let's Encrypt rate limits on
+every recreate. The daemon runs with `--statedir` pointed here, which covers all
+of it.
 
 In the state volume, a recreated box is the same node, with the same name and
 address, and nothing to re-authenticate. Deleting that volume is what "leave the
 tailnet" means.
 
+### Migrating a hand-rolled install
+
 If you set Tailscale up in a box by hand before this existed, your state is in
-the old place. Move it once:
+the old place. Copy it across — **copy, not move**, and do it while the daemon
+is still running, so nothing goes down and you keep a fallback:
 
 ```sh
-sudo systemctl stop tailscaled 2>/dev/null || sudo pkill tailscaled
 sudo mkdir -p /var/lib/agentbox/tailscale
-sudo mv /var/lib/tailscale/tailscaled.state /var/lib/agentbox/tailscale/
+sudo chmod 0700 /var/lib/agentbox/tailscale
+sudo cp -a /var/lib/tailscale/. /var/lib/agentbox/tailscale/
 ```
 
-Then set `AGENTBOX_TAILSCALE=auto` and restart the box. Nothing to log in to
-again — the state file is the identity.
+Then set `AGENTBOX_TAILSCALE=auto` and restart the box. The supervised daemon
+picks the copy up and comes back as the same node — no login, same name, same
+address. Your hand-started `tailscaled` dies with the old container, which is
+the point.
+
+If the copy turns out to be stale, `agentbox-tailscaled login` once puts it
+right; you lose nothing but the node's identity, and the old node can be deleted
+from the admin console.
 
 ## The operator
 
@@ -167,6 +182,10 @@ unless you made them reusable. Make a new one.
 
 **The box joined but came back as a new node after a recreate.** Its state was
 not on the volume — see [Where the identity lives](#where-the-identity-lives).
+
+**`tailscale serve` re-fetches its certificate after every recreate.** The
+`certs/` directory was left behind: the daemon needs `--statedir` on the volume,
+not just `--state`.
 
 **Something else on the tailnet cannot reach the box.** Check your tailnet ACLs
 in the admin console. Userspace networking changes nothing about ACLs.

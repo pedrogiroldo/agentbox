@@ -54,9 +54,12 @@
   `ensure`, `start`, `stop`, `status`; verify each verb runs and exits zero in a
   booted container with `AGENTBOX_TAILSCALE` unset.
 - [x] 4.2 Implement `start`: launch `tailscaled --tun=userspace-networking` with
-  its state at `/var/lib/agentbox/tailscale/tailscaled.state` and its log beside
-  the box's other logs, and wait for the daemon's socket to answer; verify the
-  state file is created on the volume and not under `/var/lib/tailscale`.
+  `--statedir=/var/lib/agentbox/tailscale` — the directory, not just the state
+  file, so the `serve` certificates and profile data land on the volume too —
+  and its log beside the box's other logs, then wait for the daemon's socket to
+  answer; verify the state directory is created on the volume, that nothing is
+  written under `/var/lib/tailscale`, and that `certs/` appears there once
+  `serve` has run.
 - [x] 4.3 Implement the unattended join: when the box is not already a member
   and `TS_AUTHKEY` is set, run `tailscale up --authkey --operator=<box user>`
   (plus `--hostname` from `TS_HOSTNAME`); with no key, do not block the boot and

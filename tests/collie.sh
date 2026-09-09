@@ -332,10 +332,19 @@ step "9. AGENTBOX_HERDR_SERVER=0 gives back today's behaviour"
 boot -e AGENTBOX_HERDR_SERVER=0 \
     || { echo "the box did not boot with the herdr server disabled"; docker logs "$NAME" | tail -30; exit 1; }
 
-if as_dev 'herdr status server' 2>/dev/null | grep -q '^status: not running'; then
+# Retried for the same reason as the agreement check in step 2: `docker exec`
+# comes back empty now and then on a loaded host, and empty is not "running".
+# A server that really did start says so on every attempt.
+said_no=0
+for _ in 1 2 3; do
+    server_status="$(as_dev 'herdr status server' 2>&1 || true)"
+    printf '%s' "$server_status" | grep -q '^status: not running' && { said_no=1; break; }
+    sleep 2
+done
+if [ "$said_no" = 1 ]; then
     pass "no herdr server when the operator says no"
 else
-    fail "the herdr server started despite AGENTBOX_HERDR_SERVER=0"
+    fail "the herdr server started despite AGENTBOX_HERDR_SERVER=0: $(printf '%s' "$server_status" | head -2)"
 fi
 
 # The home volume carries over between boots here, so a leftover socket file
