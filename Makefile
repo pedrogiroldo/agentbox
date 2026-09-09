@@ -76,8 +76,10 @@ shell: ## Open a shell inside the box without SSH (rescue hatch)
 root: ## Open a root shell inside the box
 	$(COMPOSE) exec -u root $(SERVICE) bash -l
 
-update: ## Rebuild with the latest agents and recreate (volumes are kept)
-	$(COMPOSE) build --pull --build-arg AGENTS_CACHEBUST=$$(date +%Y%m%d%H%M)
+update: ## Rebuild with the latest agents and Collie, and recreate (volumes are kept)
+	$(COMPOSE) build --pull \
+		--build-arg AGENTS_CACHEBUST=$$(date +%Y%m%d%H%M) \
+		--build-arg COLLIE_CACHEBUST=$$(date +%Y%m%d%H%M)
 	$(COMPOSE) up -d --force-recreate
 	@$(MAKE) --no-print-directory hint
 
@@ -169,6 +171,9 @@ test: build ## Boot the image and check that persistence really works
 
 test-docker: build ## Check the box's own Docker daemon end to end
 	tests/docker.sh $(IMAGE)
+
+test-collie: build ## Check that Collie ships installed, dead, and honest about it
+	tests/collie.sh $(IMAGE)
 
 test-mirror: build ## Check what the box tells you about mirroring
 	tests/mirror.sh $(IMAGE)

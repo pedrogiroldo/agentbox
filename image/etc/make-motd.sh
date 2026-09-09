@@ -14,6 +14,8 @@ cat > /etc/motd <<EOF
   nvim $(ver nvim --version | awk '{print $2}')      node $(ver node --version)   bun $(ver bun --version)   uv $(ver uv --version | awk '{print $2}')
 
   agentbox-mirror            same project here and on your laptop
+  agentbox-collie            the herd in a browser (off by default)
+  agentbox-tailscaled login  join a tailnet: this box's front door
   ~/projects                 your repositories (persistent)
   ~/.agentbox/provision.sh   packages that must survive a rebuild
   ~/.agentbox/provision.log  what it printed last boot

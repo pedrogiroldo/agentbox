@@ -98,6 +98,20 @@ ships, and the volume owns what you added.
 Turn the whole system layer off with `AGENTBOX_PERSIST=0` if you want the old
 "only the home survives" behaviour back.
 
+### The one thing that had to move
+
+`/var` is not kept, and Tailscale's node identity lives in `/var/lib/tailscale`
+by default — so a box that joined a tailnet would come back from a recreate
+asking to be authenticated again, under a new name, with the old node dangling
+in the admin console.
+
+So the box runs `tailscaled` with its state at
+`/var/lib/agentbox/tailscale/tailscaled.state`, inside the state volume. A
+recreated box is the same tailnet node, with the same name and address, and
+nothing to log in to. Deleting the state volume is what leaving the tailnet
+means. [docs/tailscale.md](tailscale.md) has the rest, including how to move an
+existing install's state into the volume.
+
 ## Three ways to install things
 
 **1. Just install it.** `sudo apt install postgresql-client`. It is recorded

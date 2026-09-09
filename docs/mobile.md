@@ -3,6 +3,24 @@
 The whole point of this box is that a phone is enough to check on your agents,
 read their diffs and unblock them. This is what that actually looks like.
 
+## Two front doors, and which one you want
+
+There are two, and they are not competing for the same moment:
+
+- **SSH + herdr** — everything below. Needs nothing but an SSH client and the
+  key you already have, works from any network, and gives you the whole box: a
+  shell, Neovim, `git`, the agents. The cost is that you are driving a terminal
+  with a soft keyboard.
+- **[Collie](collie.md)** — a web interface built for a phone. The agent waiting
+  on you is at the top, its prompts are buttons, you type normally, and your
+  phone buzzes when an agent blocks on you instead of you going to look. The
+  cost is that it has to be reachable, which means a tailnet in front of it, and
+  that reaching it is shell access to this box.
+
+Start here. Add Collie when checking on agents from your phone becomes a daily
+thing rather than an occasional one, and read [docs/collie.md](collie.md) and
+[docs/security.md](security.md) before you do.
+
 ## 1. An SSH client
 
 Anything that speaks SSH works. Known-good options:
@@ -90,6 +108,11 @@ one screen, one thing.
 
 Reconnecting is just `ssh` again and `herdr` — it reattaches to the running
 session with every agent exactly where you left it.
+
+The box starts the herdr server at boot, so the session is already there before
+your first login: agents keep running whether or not anyone is connected, which
+is also what lets [Collie](collie.md) find them without an SSH session first.
+`AGENTBOX_HERDR_SERVER=0` goes back to starting it yourself.
 
 ## 5. Neovim on a 6-inch screen
 

@@ -91,6 +91,53 @@ do anything the `dev` user can do, which is everything in the container.
   laptop is then part of the same blast radius, and a deletion in the box
   propagates to it, so a mirror is not a backup.
 
+## Collie, the tailnet, and what a browser front door costs
+
+The box ships [Collie](collie.md), a mobile web UI for the herd, and **does not
+run it**. `AGENTBOX_COLLIE` defaults to `off`, and so does `AGENTBOX_TAILSCALE`,
+which it depends on. Those defaults are part of the feature, not timidity.
+
+**A running Collie is shell access to this box.** A single API call sends
+arbitrary keystrokes into a live pane. There is no sandbox and no command
+allow-list, because either one would defeat what it is for. Since this container
+runs `privileged: true`, that is the same blast radius as the SSH port, reached
+by whoever can open a URL.
+
+**Its device gates protect writes only.** Pairing a phone answers "may this
+device drive an agent?". It does not gate reading. Anything that reaches the URL
+and passes the same-origin check can read every pane: source, agent output, the
+values in your environment.
+
+**The write gate does not exist until you pair.** Collie leaves writes open
+until at least one device holds a credential, deliberately, so that you cannot
+lock yourself out. A Collie you turned on and did not pair accepts writes from
+any reader. Pairing your phone is the last step of turning it on, not an extra.
+
+So the network in front of it is the boundary — and here that network is a
+tailnet the box joins itself, with nothing published. Two things follow, and
+both are better than the alternatives:
+
+- **Nothing is exposed.** Collie binds loopback and `tailscale serve` reaches it
+  inside the same container. No port is added to `ports:`, no proxy is involved,
+  and the box's own `COLLIE_ALLOW_ANY_HOST` is never set — host validation stays
+  on.
+- **Identity is checked, not assumed.** `tailscale serve` injects the caller's
+  tailnet login and `COLLIE_TRUSTED_USER` refuses anyone else. Set it: without
+  it, everyone on your tailnet can read every pane.
+
+`tailscale funnel` publishes to the public internet. Nothing here uses it, and
+nothing should.
+
+**Joining a tailnet is itself a decision.** The box talks to Tailscale's control
+plane and becomes reachable by every node on your tailnet, subject to your ACLs.
+It runs in userspace networking, so it needs no TUN device and no `NET_ADMIN` —
+this adds no privilege to the container — but it does add a network the box is a
+member of. The normal way to join is `agentbox-tailscaled login`, which leaves no
+credential anywhere; `TS_AUTHKEY` exists for unattended deploys and is a
+credential in a file, so treat it as one. [docs/tailscale.md](tailscale.md)
+covers both, where the node identity is stored, and why that matters at recreate
+time.
+
 ## What agentbox does not do
 
 No fail2ban, no automatic security updates, no secret manager, no audit log.
