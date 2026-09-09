@@ -105,8 +105,19 @@ as_user() {
 # signal. Its pidfile would be more precise and lives inside Collie's config
 # home, which moves depending on whether it was linked into herdr — a version
 # detail this box has no business depending on.
+#
+# Captured, not piped into `grep -q`: under `set -o pipefail` grep returns as
+# soon as it matches, the writer takes SIGPIPE on the rest of its output, and
+# the pipeline reports failure on a bridge that is up. Here that is not
+# cosmetic -- the wait loop below would run out and give_up, which under
+# AGENTBOX_COLLIE=on refuses the boot over a Collie that started fine.
 running() {
-    as_user collie status 2>/dev/null | grep -q 'is running'
+    local out
+    out="$(as_user collie status 2>/dev/null)" || return 1
+    case "$out" in
+        *"is running"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # Two preconditions, and naming which one is missing is the whole point of

@@ -112,20 +112,15 @@ else
     fail "no herdr server after boot — Collie would have nothing to mirror"
 fi
 
-# This asserts that two views of the same fact agree, so a retry cannot hide a
-# real disagreement -- a broken status fails every attempt. It is here because
-# `docker exec` occasionally comes back empty on a loaded host, and an empty
-# answer is not a disagreement.
-agreed=0
-for _ in 1 2 3; do
-    herdr_status="$(in_box 'agentbox-herdr status' 2>&1 || true)"
-    printf '%s' "$herdr_status" | grep -q 'running' && { agreed=1; break; }
-    sleep 2
-done
-if [ "$agreed" = 1 ]; then
+# Single attempt, on purpose. This used to retry, to work around what looked
+# like a loaded host -- it was actually `set -o pipefail` plus `grep -q` inside
+# running(), reporting SIGPIPE as failure on a live server. With that fixed, a
+# retry here would only hide the regression coming back.
+herdr_status="$(in_box 'agentbox-herdr status' 2>&1 || true)"
+if printf '%s' "$herdr_status" | grep -q 'server: running'; then
     pass "agentbox-herdr status agrees"
 else
-    fail "agentbox-herdr status disagrees with herdr itself, three times: $(printf '%s' "$herdr_status" | head -2)"
+    fail "agentbox-herdr status disagrees with herdr itself: $(printf '%s' "$herdr_status" | head -2)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -312,7 +307,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-step "8. The box never buys itself an easier life"
+step "8. Liveness checks survive their own plumbing"
+# ---------------------------------------------------------------------------
+# `set -o pipefail` plus `grep -q` reports SIGPIPE as failure on a command that
+# was still writing, so running() said "no" about a live server roughly one
+# time in six. Ten runs is enough to catch it coming back; one is not.
+flapped=0
+for _ in $(seq 10); do
+    in_box 'agentbox-herdr status' 2>/dev/null | grep -q 'server: running' || flapped=1
+done
+if [ "$flapped" = 0 ]; then
+    pass "agentbox-herdr status is stable over ten consecutive calls"
+else
+    fail "agentbox-herdr status flapped — check for a pipefail/grep -q pipeline in running()"
+fi
+
+# Comment lines excluded: the comments in those scripts explain this very bug,
+# so a naive search for the string matches the explanation of why it is gone.
+if in_box "grep -qE '^[^#]*\| *grep -q' /usr/local/bin/agentbox-herdr /usr/local/bin/agentbox-collie" 2>/dev/null; then
+    fail "a grep -q pipeline is back in one of the supervisors"
+else
+    pass "no grep -q pipeline in either supervisor"
+fi
+
+# ---------------------------------------------------------------------------
+step "9. The box never buys itself an easier life"
 # ---------------------------------------------------------------------------
 # These six exist only to undo Collie defaults that are correct here. None of
 # them may reappear in a shipped file.
@@ -327,21 +346,13 @@ done
 [ "$undone" = 0 ] && pass "none of the six undone variables are set anywhere"
 
 # ---------------------------------------------------------------------------
-step "9. AGENTBOX_HERDR_SERVER=0 gives back today's behaviour"
+step "10. AGENTBOX_HERDR_SERVER=0 gives back today's behaviour"
 # ---------------------------------------------------------------------------
 boot -e AGENTBOX_HERDR_SERVER=0 \
     || { echo "the box did not boot with the herdr server disabled"; docker logs "$NAME" | tail -30; exit 1; }
 
-# Retried for the same reason as the agreement check in step 2: `docker exec`
-# comes back empty now and then on a loaded host, and empty is not "running".
-# A server that really did start says so on every attempt.
-said_no=0
-for _ in 1 2 3; do
-    server_status="$(as_dev 'herdr status server' 2>&1 || true)"
-    printf '%s' "$server_status" | grep -q '^status: not running' && { said_no=1; break; }
-    sleep 2
-done
-if [ "$said_no" = 1 ]; then
+server_status="$(as_dev 'herdr status server' 2>&1 || true)"
+if printf '%s' "$server_status" | grep -q '^status: not running'; then
     pass "no herdr server when the operator says no"
 else
     fail "the herdr server started despite AGENTBOX_HERDR_SERVER=0: $(printf '%s' "$server_status" | head -2)"
