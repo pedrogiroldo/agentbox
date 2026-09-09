@@ -90,8 +90,14 @@ fi
 # ---------------------------------------------------------------------------
 config_env=/etc/agentbox/config.env
 : > "$config_env"
+# TS_AUTHKEY is deliberately absent from this list. It is a credential, this
+# file is read by every interactive shell, and agentbox-persist captures /etc.
+# It reaches exactly one `tailscale up` call, in the boot, and nothing else.
 for var in LANG LC_ALL TZ AGENTBOX_BANNER AGENTBOX_BANNER_BY \
-           AGENTBOX_SSH_HOST AGENTBOX_SSH_PORT; do
+           AGENTBOX_SSH_HOST AGENTBOX_SSH_PORT \
+           AGENTBOX_COLLIE AGENTBOX_TAILSCALE AGENTBOX_HERDR_SERVER \
+           COLLIE_PORT COLLIE_TRUSTED_USER COLLIE_PUBLIC_URL \
+           AGENTBOX_COLLIE_PUSH COLLIE_PUSH_SUBJECT; do
     eval "value=\${$var:-}"
     [ -n "$value" ] || continue
     # Escape any embedded double quote; these values are short and tame.
@@ -240,14 +246,42 @@ if [ -S /var/run/docker.sock ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 9. Herdr agent integrations: they report each agent's state to the pane, so
-#    the sidebar shows which agent is working and which one is waiting on you.
+# 9. Herdr: the server, its agent integrations, and the Collie plugin.
+#
+# The server first, and before sshd, because the two things after it both talk
+# to its socket -- and because a phone that opens Collie should find the herd
+# already there instead of having to SSH in once to create it. It can never be
+# fatal: SSH is this box's recovery path, and a multiplexer that will not start
+# is exactly when that path is needed.
 # ---------------------------------------------------------------------------
+if [ "${AGENTBOX_HERDR_SERVER:-1}" != "0" ]; then
+    agentbox-herdr start || warn "the herdr server is not running — sessions will start on first login instead"
+fi
+
+# The integrations report each agent's state to the pane, so the sidebar shows
+# which agent is working and which one is waiting on you.
 if [ "${AGENTBOX_HERDR_INTEGRATIONS:-1}" = "1" ]; then
     for integration in claude codex opencode; do
         as_user herdr integration install "$integration" >/dev/null 2>&1 \
             || warn "could not install the herdr $integration integration"
     done
+fi
+
+# Collie's start/stop/status buttons inside herdr. The link target is the
+# release tree, not the directory above it -- the manifest lives inside
+# `current`. herdr resolves that symlink when it records the plugin, so an
+# in-place `collie update` leaves it pointing at the previous version; relinking
+# on every boot is what puts it right, and is idempotent.
+#
+# It goes over the server's socket, so a server that did not come up means this
+# cannot work either -- and saying which of the two broke beats one opaque line.
+if [ -e /opt/collie/current/herdr-plugin.toml ]; then
+    if agentbox-herdr status >/dev/null 2>&1; then
+        as_user herdr plugin link /opt/collie/current >/dev/null 2>&1 \
+            || warn "could not link the collie plugin into herdr — the collie command still works"
+    else
+        warn "skipping the collie plugin link: no herdr server to link it into"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -276,6 +310,13 @@ fi
     if [ "${AGENTBOX_DOCKER:-install}" != "on" ]; then
         agentbox-dockerd ensure || warn "docker is not available in this box"
     fi
+
+    # The tailnet first: it is what anything in here is reached through, and
+    # Collie refuses to start without it. Both are off by default -- see
+    # docs/security.md -- and both are in the background chain because nothing
+    # about sshd should ever wait on them.
+    agentbox-tailscaled ensure || warn "this box has not joined a tailnet"
+    agentbox-collie ensure || warn "collie is not running in this box"
 
     if [ -f "$provision" ]; then
         {

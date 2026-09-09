@@ -81,6 +81,8 @@ what makes "open a terminal on your phone" a reasonable thing to do.
 | **Tools** | git, git-lfs, gh, ripgrep, fd, fzf, jq, build-essential |
 | **Docker** | its own daemon, installed on the first boot — the box runs containers by itself ([docs/docker.md](docs/docker.md)) |
 | **Mirroring** | `agentbox-mirror` puts a project on your laptop too, live, for the code that has to run on real hardware ([docs/mirror.md](docs/mirror.md)) |
+| **Network** | Tailscale built in, in userspace mode — the box joins your tailnet by itself, with no published port and no added privilege ([docs/tailscale.md](docs/tailscale.md)) |
+| **Phone** | [Collie](https://github.com/AltanS/collie), a web UI for the herd — in the image and switched off, because turning it on is shell access to the box ([docs/collie.md](docs/collie.md)) |
 
 ## Getting started
 
@@ -139,6 +141,27 @@ dominant cost over a mobile link. On a wide terminal nothing changes.
 
 The full walkthrough, including the client settings that matter, is in
 [docs/mobile.md](docs/mobile.md).
+
+### Or no terminal at all
+
+[Collie](https://github.com/AltanS/collie) ships in the image: a web interface
+built for a phone, where the agent waiting on you is at the top, its questions
+are buttons, you type with the normal keyboard instead of chording `Ctrl+b` with
+a thumb, and your phone buzzes when an agent blocks on you — push notifications
+come armed, and all that is left is saying yes on the device.
+
+It **does not start on its own** — `AGENTBOX_COLLIE=off` is the default. Opening
+that URL is shell access to this box, and reads through it are open to whatever
+reaches it.
+
+The way in is a tailnet the box joins itself, from inside the container:
+`tailscaled` in userspace mode (no `/dev/net/tun`, no `NET_ADMIN`) with
+`tailscale serve` reaching Collie on its own loopback. **No published port, no
+proxy, nothing on the host.** Two variables in `.env` and the phone opens
+`https://your-box.your-tailnet.ts.net`.
+
+The whole path is in [docs/collie.md](docs/collie.md) and
+[docs/tailscale.md](docs/tailscale.md).
 
 ## Your data stays on your server
 
@@ -229,6 +252,8 @@ The other: agent credentials sit in the volume in plaintext.
 ## Documentation
 
 - [Mobile use](docs/mobile.md) — SSH client, Herdr, Neovim on a small screen
+- [Collie](docs/collie.md) — the herd in a phone browser, and pairing a device
+- [Tailnet](docs/tailscale.md) — the box on your private network, no published port, no added privilege
 - [Persistence](docs/persistence.md) — what survives, provisioning, backups
 - [Deploy](docs/deploy.md) — VPS, Coolify, Dokploy, multiple boxes
 - [Agents](docs/agents.md) — logging in, integrations, running several at once

@@ -77,3 +77,10 @@ jobs:
       # and that the command the box prints is the one you can actually paste.
       - name: Mirror smoke test
         run: tests/mirror.sh agentbox:test
+
+      # Collie: that it ships installed and dead, that the herdr server is up
+      # before anyone logs in, and that the plugin links -- which is also how a
+      # herdr that fell below Collie's floor gets caught here instead of on a
+      # phone.
+      - name: Collie smoke test
+        run: tests/collie.sh agentbox:test

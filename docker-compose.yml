@@ -12,6 +12,8 @@ services:
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
         CODEX_VERSION: ${CODEX_VERSION:-latest}
         OPENCODE_VERSION: ${OPENCODE_VERSION:-latest}
+        COLLIE_VERSION: ${COLLIE_VERSION:-latest}
+        INSTALL_TAILSCALE: ${INSTALL_TAILSCALE:-true}
         INSTALL_DOCKER_CLI: ${INSTALL_DOCKER_CLI:-true}
         # Bake the Docker daemon into the image (+192 MB). Off, because the box
         # installs it on first boot into the state volume instead — same
@@ -32,6 +34,10 @@ services:
       # mosh survives a phone changing networks, but needs UDP. Most managed
       # proxies (Coolify/Dokploy) do not forward UDP; enable only if yours does.
       # - "${MOSH_PORT_RANGE:-60000-60010}:60000-60010/udp"
+      # Collie needs nothing here. It binds loopback and the box's own
+      # `tailscale serve` reaches it from inside this same container, so a
+      # phone on the tailnet opens it with no port published at all.
+      # docs/collie.md.
 
     environment:
       # --- access ---
@@ -56,6 +62,37 @@ services:
       AGENTBOX_BANNER: ${AGENTBOX_BANNER:-always}
       AGENTBOX_BANNER_BY: ${AGENTBOX_BANNER_BY:-}
       AGENTBOX_HERDR_INTEGRATIONS: ${AGENTBOX_HERDR_INTEGRATIONS:-1}
+      # The herdr server starts with the box, so the herd is there before
+      # anyone logs in — which is what lets a phone open Collie and find it.
+      # 0 goes back to starting it yourself from a shell.
+      AGENTBOX_HERDR_SERVER: ${AGENTBOX_HERDR_SERVER:-1}
+      # --- tailnet: the box's own front door (docs/tailscale.md) ---
+      # The box joins a tailnet as a node of its own, in userspace networking:
+      # no TUN device, no NET_ADMIN, no published port. off (default) | auto | on.
+      AGENTBOX_TAILSCALE: ${AGENTBOX_TAILSCALE:-off}
+      # A reusable or ephemeral auth key, so a first boot joins with nobody
+      # watching. Without one the box prints a login URL and waits for you.
+      # Never written to the box's own config or persisted state.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      # The name this box takes on the tailnet. Empty means Tailscale picks.
+      TS_HOSTNAME: ${TS_HOSTNAME:-}
+      # --- collie: the mobile web UI (docs/collie.md) ---
+      # In the image, not running: off (default) | auto | on. A running Collie
+      # is shell access to this box and its reads are open to whoever on the
+      # tailnet reaches the URL. Read docs/security.md before you change this.
+      AGENTBOX_COLLIE: ${AGENTBOX_COLLIE:-off}
+      COLLIE_PORT: ${COLLIE_PORT:-8787}
+      # Your tailnet login. `tailscale serve` injects the header this checks,
+      # so nobody else on the tailnet gets in. Set it.
+      COLLIE_TRUSTED_USER: ${COLLIE_TRUSTED_USER:-}
+      COLLIE_PUBLIC_URL: ${COLLIE_PUBLIC_URL:-}
+      # Push notifications are armed for you: the box generates the keypair
+      # before starting Collie, so the only step left is granting permission on
+      # the phone. 0 skips it. The keys are generated once and never replaced —
+      # replacing them silently unsubscribes every device.
+      AGENTBOX_COLLIE_PUSH: ${AGENTBOX_COLLIE_PUSH:-1}
+      # Optional contact for your push provider, e.g. mailto:you@example.com.
+      COLLIE_PUSH_SUBJECT: ${COLLIE_PUSH_SUBJECT:-}
       # The daemon inside: install (get it on first boot, then run it), auto
       # (run it only if something already installed it), on (a box without
       # Docker refuses to boot), off (never).

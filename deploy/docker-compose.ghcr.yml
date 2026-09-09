@@ -28,6 +28,8 @@ services:
 
     ports:
       - "2222:22"
+      # Collie (docs/collie.md) needs nothing here: it binds loopback and the
+      # box's own `tailscale serve` reaches it inside this container.
 
     environment:
       # REQUIRED — the public key you will SSH with (laptop and/or phone).
@@ -45,6 +47,26 @@ services:
       # empty and `agentbox-mirror` prints a placeholder instead.
       AGENTBOX_SSH_HOST: ""
       AGENTBOX_SSH_PORT: "2222"
+      # The herdr server starts with the box, so the herd exists before anyone
+      # logs in. "0" goes back to starting it yourself from a shell.
+      AGENTBOX_HERDR_SERVER: "1"
+      # The box joins a tailnet as its own node, in userspace networking: no
+      # TUN device, no extra capability, no published port. docs/tailscale.md.
+      AGENTBOX_TAILSCALE: "off"
+      # An auth key joins on the first boot with nobody watching.
+      TS_AUTHKEY: ""
+      TS_HOSTNAME: ""
+      # Collie is in the image and does not run: off (default) | auto | on.
+      # Turning it on is shell access to this box from a browser — read
+      # docs/security.md, then docs/collie.md, before you change it.
+      AGENTBOX_COLLIE: "off"
+      COLLIE_PORT: "8787"
+      # Your tailnet login, checked against the header `tailscale serve` injects.
+      COLLIE_TRUSTED_USER: ""
+      # Push notifications come armed: the box generates the keypair before
+      # starting Collie, so all that is left is saying yes on the phone.
+      AGENTBOX_COLLIE_PUSH: "1"
+      COLLIE_PUSH_SUBJECT: ""
 
     volumes:
       - agentbox-home:/home/dev

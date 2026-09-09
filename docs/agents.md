@@ -36,6 +36,14 @@ It is the single most useful thing when you have five panes and a phone screen.
 Turn it off with `AGENTBOX_HERDR_INTEGRATIONS=0` if you manage those configs
 yourself.
 
+The box also starts the herdr **server** at boot, before sshd, so the herd
+exists whether or not anyone is logged in. Running `herdr` from a shell attaches
+to it exactly as it always did; what changes is that agents are already there
+when you connect, and that [Collie](collie.md) has something to mirror without
+an SSH session first. `AGENTBOX_HERDR_SERVER=0` goes back to starting it
+yourself, and a server that fails to start is a warning — it can never keep you
+out of the box.
+
 ## Running several agents at once
 
 This is where Herdr earns its place:

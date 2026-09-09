@@ -22,6 +22,14 @@ ARG NVIM_VERSION=stable
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
 ARG OPENCODE_VERSION=latest
+# "latest" takes the newest release tag; a v-prefixed tag (v1.6.0) pins it and
+# skips the tag lookup entirely.
+ARG COLLIE_VERSION=latest
+
+# Tailscale: how the box gets a front door of its own. It runs in userspace
+# networking, so it needs no TUN device and no NET_ADMIN -- see docs/tailscale.md.
+# Collie has no other way in, so turning this off makes Collie unreachable.
+ARG INSTALL_TAILSCALE=true
 
 ARG INSTALL_DOCKER_CLI=true
 # Bake the daemon into the image. Off by default -- not because the box does
@@ -102,6 +110,21 @@ RUN if [ "$INSTALL_DOCKER_CLI" = "true" ] || [ "$INSTALL_DOCKER_ENGINE" = "true"
         && rm -rf /var/lib/apt/lists/*; \
     fi
 
+# Tailscale (official apt repository). Installed, never started: the box joins
+# nothing unless AGENTBOX_TAILSCALE says so, because joining a tailnet is
+# joining somebody's tailnet.
+RUN if [ "$INSTALL_TAILSCALE" = "true" ]; then \
+        install -m 0755 -d /etc/apt/keyrings \
+        && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+             -o /etc/apt/keyrings/tailscale-archive-keyring.gpg \
+        && chmod go+r /etc/apt/keyrings/tailscale-archive-keyring.gpg \
+        && echo "deb [signed-by=/etc/apt/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main" \
+             > /etc/apt/sources.list.d/tailscale.list \
+        && apt-get update && apt-get install -y --no-install-recommends tailscale \
+        && rm -rf /var/lib/apt/lists/* \
+        && tailscale version; \
+    fi
+
 # ---------------------------------------------------------------------------
 # Runtimes: Node.js, Bun, uv — installed into /usr/local so they survive
 # a wiped home volume and are shared by every user.
@@ -143,6 +166,40 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 RUN HERDR_INSTALL_DIR=/usr/local/bin bash -c 'curl -fsSL https://herdr.dev/install.sh | sh' \
     && herdr --version
+
+# ---------------------------------------------------------------------------
+# Collie — the mobile web UI for the herd (docs/collie.md)
+# ---------------------------------------------------------------------------
+# Installed, never started: AGENTBOX_COLLIE decides that, and it defaults to
+# off. A running Collie hands keystrokes to live panes in a privileged
+# container, and its reads are open to whatever reaches the URL.
+#
+# Baked in rather than fetched on first boot -- the trade that defers the
+# Docker engine (192 MB nobody asked for) does not apply to 84 MB that is the
+# whole feature. /opt is inside the persistence contract, so a `collie update`
+# from the phone survives a recreate.
+#
+# COLLIE_VERSION=latest asks api.github.com for the newest tag, which is rate
+# limited per network address; pin a tag (v1.6.0) for a build that never calls it.
+ARG COLLIE_CACHEBUST=0
+RUN set -eux; \
+    echo "cachebust ${COLLIE_CACHEBUST}" > /dev/null; \
+    export COLLIE_DIR=/opt/collie; \
+    if [ "${COLLIE_VERSION}" != "latest" ]; then export COLLIE_TAG="${COLLIE_VERSION}"; fi; \
+    curl -fsSL https://colliepwa.dev/install.sh | sh; \
+    # The manifest herdr links against lives inside the release tree, so both
+    # the symlink and `herdr plugin link` target `current`, not the directory
+    # above it -- linking the parent fails with plugin_manifest_not_found.
+    ln -s /opt/collie/current/bin/collie /usr/local/bin/collie; \
+    # The release tarball unpacks versions/ world-writable and owned by uid
+    # 1001. Nothing under a system prefix should be writable by the user it is
+    # meant to outrank, even one holding passwordless sudo.
+    chown -R root:root /opt/collie; \
+    chmod -R go-w /opt/collie; \
+    # `collie link` at the end of the installer publishes into /root/.local/bin,
+    # which is on nobody's PATH. The symlink above is the one that counts.
+    rm -rf /root/.local/share/collie /root/.local/bin; \
+    collie version
 
 # ---------------------------------------------------------------------------
 # Coding agents
@@ -187,13 +244,18 @@ COPY image/etc/greet.sh /etc/agentbox/greet.sh
 COPY image/etc/persist.sh /usr/local/bin/agentbox-persist
 COPY image/etc/dockerd.sh /usr/local/bin/agentbox-dockerd
 COPY image/etc/mirror.sh /usr/local/bin/agentbox-mirror
+COPY image/etc/collie.sh /usr/local/bin/agentbox-collie
+COPY image/etc/tailscaled.sh /usr/local/bin/agentbox-tailscaled
+COPY image/etc/herdr-server.sh /usr/local/bin/agentbox-herdr
 COPY image/entrypoint.sh /usr/local/bin/agentbox-entrypoint
 COPY image/skel/ /opt/agentbox/skel/
 
 RUN set -eux; \
     chmod +x /usr/local/bin/agentbox-entrypoint /usr/local/bin/agentbox-make-motd \
         /usr/local/bin/agentbox-banner /usr/local/bin/agentbox-persist \
-        /usr/local/bin/agentbox-dockerd /usr/local/bin/agentbox-mirror; \
+        /usr/local/bin/agentbox-dockerd /usr/local/bin/agentbox-mirror \
+        /usr/local/bin/agentbox-collie /usr/local/bin/agentbox-herdr \
+        /usr/local/bin/agentbox-tailscaled; \
     # /etc/agentbox/greet.sh prints the banner and the motd, in that order.
     # PAM would print the motd first (plus Ubuntu's motd-news noise), so mute it.
     sed -i 's/^session\s*optional\s*pam_motd/# &/' /etc/pam.d/sshd; \
