@@ -136,13 +136,15 @@ fi
 # The server spawns every pane, so its environment decides the shell. Started
 # by root at boot there is no $SHELL to inherit, and herdr then falls back to
 # /bin/sh -- a terminal that is not the user's, on a box that set bash for them.
-server_shell="$(in_box 'tr "\\0" "\\n" < /proc/$(pgrep -f "herdr server" | head -1)/environ | sed -n "s/^SHELL=//p"' 2>/dev/null || true)"
+# Read as the user: in an unprivileged container root has no CAP_SYS_PTRACE,
+# and /proc/<pid>/environ of someone else's process is Permission denied.
+server_shell="$(as_dev 'tr "\\0" "\\n" < /proc/$(pgrep -f "herdr server" | head -1)/environ | sed -n "s/^SHELL=//p"' 2>/dev/null || true)"
 user_shell="$(in_box 'getent passwd dev | cut -d: -f7' 2>/dev/null || true)"
 if [ -n "$server_shell" ] && [ "$server_shell" = "$user_shell" ]; then
     pass "the herdr server carries SHELL=$server_shell, so panes open the user's shell"
 else
     fail "the herdr server has SHELL='${server_shell:-unset}' (user's is $user_shell) — panes will open /bin/sh"
-    in_box 'ps -o pid,ppid,lstart,args -C herdr; for p in $(pgrep -f "herdr server"); do echo "--- $p"; tr "\\0" "\\n" < /proc/$p/environ | cut -d= -f1 | tr "\\n" " "; echo; done' 2>&1 | sed 's/^/      /'
+    as_dev 'ps -o pid,ppid,lstart,args -C herdr; for p in $(pgrep -f "herdr server"); do echo "--- $p"; tr "\\0" "\\n" < /proc/$p/environ | cut -d= -f1 | tr "\\n" " "; echo; done' 2>&1 | sed 's/^/      /'
     docker logs "$NAME" 2>&1 | grep -i herdr | sed 's/^/      /'
 fi
 
