@@ -47,9 +47,22 @@ as_user() {
 # The socket answering is the only definition of "running" that matters here:
 # it is what `herdr plugin link` and Collie's bridge both dial. `herdr status
 # server` exits 0 either way, so the word is the signal.
+#
+# Captured into a variable rather than piped into `grep -q`, and that is not
+# style. Under `set -o pipefail` the pipeline takes the *worst* exit status in
+# it: grep -q returns the moment it matches, the writer upstream gets SIGPIPE
+# (141) for the rest of its output, and the pipeline reports failure on a
+# server that is plainly running. It happens perhaps one time in six, entirely
+# on buffering -- which reads as flakiness in the infrastructure right up until
+# you look.
 running() {
     [ -S "$SOCKET" ] || return 1
-    as_user herdr status server 2>/dev/null | grep -q '^status: running'
+    local out
+    out="$(as_user herdr status server 2>/dev/null)" || return 1
+    case "$out" in
+        *"status: running"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 start() {

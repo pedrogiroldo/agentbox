@@ -23,6 +23,12 @@
 #    authenticated again, under a new name, with the old node left dangling in
 #    the admin console.
 #
+#    --statedir, not --state, because the node identity is not one file. Beside
+#    tailscaled.state sit the TLS certificates `tailscale serve` fetches and the
+#    profile data; pointing only --state at the volume would leave those on the
+#    container filesystem, so every recreate would re-fetch certificates against
+#    Let's Encrypt rate limits it did not need to touch.
+#
 #   login   join interactively: prints the URL and a QR code and waits. This
 #           is the normal way in -- you are already in a shell, and it leaves
 #           no credential anywhere
@@ -55,7 +61,6 @@ USER_NAME="${AGENTBOX_USER:-dev}"
 MODE="${AGENTBOX_TAILSCALE:-off}"
 
 STATE_DIR="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}/tailscale"
-STATE="$STATE_DIR/tailscaled.state"
 SOCKET=/var/run/tailscale/tailscaled.sock
 LOG_DIR="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}/log"
 LOG="$LOG_DIR/tailscaled.log"
@@ -110,7 +115,7 @@ start_daemon() {
     # called. --fork always forks and tini adopts the orphan.
     setsid --fork tailscaled \
         --tun=userspace-networking \
-        --state="$STATE" \
+        --statedir="$STATE_DIR" \
         --socket="$SOCKET" \
         >>"$LOG" 2>&1
 
@@ -237,7 +242,7 @@ status() {
 
     if joined; then
         echo "tailnet: joined as $(tailnet_name)"
-        echo "  state: $STATE (in the state volume, so a recreate keeps this node)"
+        echo "  state: $STATE_DIR (in the state volume, so a recreate keeps this node)"
         return 0
     fi
 
