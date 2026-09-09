@@ -5,8 +5,8 @@
 # Collie is the one thing in this image that is deliberately installed and
 # deliberately dead. Almost every question here is about that gap:
 #
-#   1. the binary is there, linked, and owned by root with nothing writable
-#      by the user it is meant to outrank
+#   1. the binary is there, linked, owned by the box's user so that it can
+#      update itself in place, and writable by nobody else
 #   2. the herdr server is up before anyone logs in, and off when asked
 #   3. the plugin is linked into herdr -- which is also herdr enforcing
 #      Collie's own min_herdr_version, so a herdr that fell below Collie's
@@ -101,6 +101,16 @@ if [ -z "$writable" ]; then
     pass "nothing under /opt/collie is group- or world-writable"
 else
     fail "world- or group-writable under a system prefix: $writable"
+fi
+
+# `collie update` stages the next release beside the current one, as the user
+# the bridge runs as. A tree that user cannot write makes every in-place update
+# fail on its first mkdir, and the docs promise that path works.
+foreign="$(as_dev 'find /opt/collie ! -type l ! -user "$(id -un)" -print -quit' 2>/dev/null || true)"
+if [ -z "$foreign" ]; then
+    pass "/opt/collie belongs to the user, so 'collie update' can write it"
+else
+    fail "not owned by the user, so an in-place update will hit EACCES: $foreign"
 fi
 
 # ---------------------------------------------------------------------------

@@ -192,10 +192,13 @@ RUN set -eux; \
     # above it -- linking the parent fails with plugin_manifest_not_found.
     ln -s /opt/collie/current/bin/collie /usr/local/bin/collie; \
     # The release tarball unpacks versions/ world-writable and owned by uid
-    # 1001. Nothing under a system prefix should be writable by the user it is
-    # meant to outrank, even one holding passwordless sudo.
-    chown -R root:root /opt/collie; \
-    chmod -R go-w /opt/collie; \
+    # 1001. It goes to the box's user, by uid because the user is created a
+    # few layers down: `collie update` runs as that user and stages the new
+    # release next to the old one, so a root-owned tree makes the in-place
+    # update docs/collie.md promises fail with EACCES on the first mkdir. Only
+    # the owner may write, so it still is not a world-writable system prefix.
+    chown -R "${USER_UID}:${USER_GID}" /opt/collie; \
+    chmod -R u+w,go-w /opt/collie; \
     # `collie link` at the end of the installer publishes into /root/.local/bin,
     # which is on nobody's PATH. The symlink above is the one that counts.
     rm -rf /root/.local/share/collie /root/.local/bin; \
