@@ -173,9 +173,12 @@ collie update      # update in place, from inside the box
 
 The in-place update lands in `/opt/collie`, which the box's persistence contract
 captures, so it survives a recreate and keeps winning until the next image
-rebuild. One wrinkle: herdr records the plugin by its resolved path, so after an
-in-place update the buttons still point at the previous version until the box
-restarts and re-links. The `collie` command itself is correct immediately.
+rebuild. That tree belongs to the box's user for exactly this reason: the
+update stages the next release beside the current one as the user the bridge
+runs as, and a root-owned `/opt/collie` fails it on the first `mkdir`. One
+wrinkle: herdr records the plugin by its resolved path, so after an in-place
+update the buttons still point at the previous version until the box restarts
+and re-links. The `collie` command itself is correct immediately.
 
 To pin a version at build time, set `COLLIE_VERSION=v1.6.0` in `.env`. That also
 skips the GitHub API call the build otherwise makes to find the newest tag.
