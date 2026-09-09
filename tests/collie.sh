@@ -133,6 +133,17 @@ else
     fail "agentbox-herdr status disagrees with herdr itself: $(printf '%s' "$herdr_status" | head -2)"
 fi
 
+# The server spawns every pane, so its environment decides the shell. Started
+# by root at boot there is no $SHELL to inherit, and herdr then falls back to
+# /bin/sh -- a terminal that is not the user's, on a box that set bash for them.
+server_shell="$(in_box 'tr "\\0" "\\n" < /proc/$(pgrep -f "herdr server" | head -1)/environ | sed -n "s/^SHELL=//p"' 2>/dev/null || true)"
+user_shell="$(in_box 'getent passwd dev | cut -d: -f7' 2>/dev/null || true)"
+if [ -n "$server_shell" ] && [ "$server_shell" = "$user_shell" ]; then
+    pass "the herdr server carries SHELL=$server_shell, so panes open the user's shell"
+else
+    fail "the herdr server has SHELL='${server_shell:-unset}' (user's is $user_shell) — panes will open /bin/sh"
+fi
+
 # ---------------------------------------------------------------------------
 step "3. The plugin is linked into herdr — which enforces Collie's herdr floor"
 # ---------------------------------------------------------------------------
