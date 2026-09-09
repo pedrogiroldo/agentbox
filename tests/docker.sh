@@ -86,9 +86,20 @@ reset_box
 step "unprivileged: refused before the download, and the box lives"
 if boot -e AGENTBOX_DOCKER=install; then
     pass "booted without privileges"
-    docker logs "$NAME" 2>&1 | grep -qi 'CAP_SYS_ADMIN' \
-        && pass "the log says why (missing CAP_SYS_ADMIN)" \
-        || fail "the log does not explain the refusal"
+    # The refusal comes from `agentbox-dockerd ensure`, which runs in the
+    # background chain after the apt replay -- so it lands in the log some
+    # time after "sshd is listening", not before. Wait for it rather than
+    # reading the log the instant the box says it is up.
+    explained=false
+    for _ in $(seq 60); do
+        if docker logs "$NAME" 2>&1 | grep -qi 'CAP_SYS_ADMIN'; then explained=true; break; fi
+        sleep 1
+    done
+    if $explained; then
+        pass "the log says why (missing CAP_SYS_ADMIN)"
+    else
+        fail "the log does not explain the refusal"
+    fi
     # Checking capabilities before apt is the whole point: 192 MB for a daemon
     # that could never have run is a bad way to spend someone's first boot.
     sleep 20
