@@ -142,6 +142,8 @@ if [ -n "$server_shell" ] && [ "$server_shell" = "$user_shell" ]; then
     pass "the herdr server carries SHELL=$server_shell, so panes open the user's shell"
 else
     fail "the herdr server has SHELL='${server_shell:-unset}' (user's is $user_shell) — panes will open /bin/sh"
+    in_box 'ps -o pid,ppid,lstart,args -C herdr; for p in $(pgrep -f "herdr server"); do echo "--- $p"; tr "\\0" "\\n" < /proc/$p/environ | cut -d= -f1 | tr "\\n" " "; echo; done' 2>&1 | sed 's/^/      /'
+    docker logs "$NAME" 2>&1 | grep -i herdr | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
