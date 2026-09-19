@@ -200,6 +200,25 @@ if in_box 'test ! -e /var/lib/agentbox/overlay/opt/collie/current'; then
 else
     fail "the overlay still pins $(in_box 'readlink /var/lib/agentbox/overlay/opt/collie/current' 2>/dev/null)"
 fi
+# Adoption drops the saved pointer, and the release it names afterwards is the
+# image's -- which was never copied into the state volume. The saved copy has to
+# fall back to the live pointer from here on, or every release it holds is
+# stranded there and laid back down at each boot for the live prune to remove
+# again, which is the accumulation this whole thing exists to stop.
+in_box 'install -d -m 0755 /var/lib/agentbox/overlay/opt/collie/versions/0.7.0 \
+    /var/lib/agentbox/overlay/opt/collie/versions/0.8.0 \
+    /var/lib/agentbox/overlay/opt/collie/versions/0.9.0' >/dev/null 2>&1 || true
+saved_out="$(in_box 'agentbox-collie prune /var/lib/agentbox/overlay/opt/collie' 2>&1 || true)"
+if in_box 'test ! -e /var/lib/agentbox/overlay/opt/collie/versions/0.7.0' \
+   && in_box 'test ! -e /var/lib/agentbox/overlay/opt/collie/versions/0.8.0' \
+   && in_box 'test -d /var/lib/agentbox/overlay/opt/collie/versions/0.9.0'; then
+    pass "the saved copy is still pruned once its own pointer is gone, keeping one for a rollback"
+else
+    fail "the saved layer kept $(in_box 'ls /var/lib/agentbox/overlay/opt/collie/versions' 2>&1 | tr '\n' ' '): $saved_out"
+fi
+in_box 'rm -rf /var/lib/agentbox/overlay/opt/collie/versions/0.7.0 \
+    /var/lib/agentbox/overlay/opt/collie/versions/0.8.0' >/dev/null 2>&1 || true
+
 # herdr records a plugin by its resolved path, which is why the entrypoint
 # prunes before it links. Re-link the way the entrypoint does and check where
 # it landed.

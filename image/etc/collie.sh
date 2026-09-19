@@ -315,9 +315,31 @@ prune() {
     cur="$(readlink -f "$base/current" 2>/dev/null)" || cur=""
     case "$cur" in
         "$versions"/*) cur_name="${cur#"$versions"/}"; cur_name="${cur_name%%/*}" ;;
-        *) log "not pruning $base: 'current' does not resolve into versions/ (${cur:-missing})"; return 0 ;;
+        *) cur_name="" ;;
     esac
-    [ -d "$versions/$cur_name" ] || { log "not pruning $base: current points at a missing release ($cur_name)"; return 0; }
+
+    # A copy of the tree answers to the live tree's pointer when its own cannot,
+    # and after an adoption its own never can again: the adoption drops the
+    # saved pointer, and the release it names afterwards is the image's, which
+    # was never copied here. Without this the saved copy keeps every release it
+    # ever held -- laid back down at each boot for the live prune to remove
+    # again, which is the accumulation this whole thing exists to stop. The
+    # split below is by version order, so a name this tree does not carry is
+    # still a usable divider.
+    if [ "$base" != "$LIVE_BASE" ] && { [ -z "$cur_name" ] || [ ! -d "$versions/$cur_name" ]; }; then
+        local live_cur
+        live_cur="$(readlink -f "$LIVE_BASE/current" 2>/dev/null)" || live_cur=""
+        case "$live_cur" in
+            "$LIVE_BASE/versions"/*)
+                cur_name="${live_cur#"$LIVE_BASE/versions"/}"; cur_name="${cur_name%%/*}" ;;
+        esac
+    fi
+
+    [ -n "$cur_name" ] || { log "not pruning $base: 'current' does not resolve into versions/ (${cur:-missing})"; return 0; }
+    if [ "$base" = "$LIVE_BASE" ] && [ ! -d "$versions/$cur_name" ]; then
+        log "not pruning $base: current points at a missing release ($cur_name)"
+        return 0
+    fi
 
     # Adoption comes first: it decides which release `current` names, and
     # everything below splits the list on that name. Not a command
@@ -333,9 +355,13 @@ prune() {
     # the oldest release and something else is doomed.
     local -a all=() older=()
     mapfile -t all < <(find "$versions" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V)
+    # By version order rather than by name alone, so the divider still works
+    # when it names a release this tree does not carry -- the copy under the
+    # overlay, split on the live pointer.
     local v seen=0
     for v in "${all[@]}"; do
         if [ "$v" = "$cur_name" ]; then seen=1; continue; fi
+        newer_than "$v" "$cur_name" && seen=1
         [ "$seen" = 0 ] && older+=("$v")
     done
 

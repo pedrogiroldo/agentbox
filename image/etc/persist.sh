@@ -185,8 +185,8 @@ cmd_restore() {
     # A box stopped before its first periodic save may carry releases in the
     # overlay that /opt has already pruned. Prune the copy first, so they are
     # not laid back down only to be removed again a moment later.
-    [ -d "$OVERLAY/opt/collie" ] && command -v agentbox-collie >/dev/null 2>&1 \
-        && { agentbox-collie prune "$OVERLAY/opt/collie" >/dev/null 2>&1 || true; }
+    [ -d "$OVERLAY$COLLIE_DIR" ] && command -v agentbox-collie >/dev/null 2>&1 \
+        && { agentbox-collie prune "$OVERLAY$COLLIE_DIR" >/dev/null 2>&1 || true; }
 
     # Count the files, not the directories rsync walks through. Keep the two
     # steps apart: pipefail would turn an rsync warning into a count of zero.
