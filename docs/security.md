@@ -63,6 +63,12 @@ road. There is no partial version of either: the box is as trusted as the
 machine under it, so run it on a machine where that is already true — your own
 VPS, not a host shared with anything you would not hand over.
 
+The same privilege is what lets the box write its own cgroup tree, which it
+uses to keep `sshd`, the herdr server and Collie scheduled ahead of the
+agents ([small-vps.md](small-vps.md)). That adds nothing to the surface: an
+unprivileged container gets a read-only tree, and the box falls back to
+process priorities.
+
 [docker.md](docker.md) has the why (no smaller capability set works, and
 rootless mode needs the same namespaces) and, if this is not a trade you want,
 the two ways to give it up:

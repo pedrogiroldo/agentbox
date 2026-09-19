@@ -38,3 +38,27 @@ else
     printf '  run \033[1mherdr\033[0m to start or reattach\n\n'
 fi
 unset _agentbox_cols _agentbox_lines
+
+# One line about the disk, only when it is worth one. The figures come from a
+# file the persist watcher refreshes (a du of the home at every login would be
+# the opposite of what a small box needs), so they can be a while stale; the
+# command they name measures live. Above AGENTBOX_CLEAN_WARN, or when more
+# than half of the home is cache, say so. Otherwise say nothing.
+_agentbox_disk="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}/.disk"
+if [ -r "$_agentbox_disk" ]; then
+    read -r _agentbox_home _agentbox_cache < "$_agentbox_disk" 2>/dev/null
+    _agentbox_warn="${AGENTBOX_CLEAN_WARN:-20G}"
+    case "$_agentbox_warn" in
+        *G|*g) _agentbox_warn=$(( ${_agentbox_warn%[Gg]} * 1048576 )) ;;
+        *M|*m) _agentbox_warn=$(( ${_agentbox_warn%[Mm]} * 1024 )) ;;
+        *)     _agentbox_warn=$(( _agentbox_warn / 1024 )) ;;
+    esac 2>/dev/null
+    if [ "${_agentbox_home:-0}" -gt "${_agentbox_warn:-0}" ] 2>/dev/null \
+       || { [ "${_agentbox_cache:-0}" -gt 0 ] && [ $(( ${_agentbox_cache:-0} * 2 )) -gt "${_agentbox_home:-0}" ]; } 2>/dev/null; then
+        printf '  home %d.%d GB, %d.%d GB of it rebuildable \342\200\224 \033[1magentbox-clean\033[0m shows what\n\n' \
+            $(( _agentbox_home / 1048576 )) $(( (_agentbox_home % 1048576) * 10 / 1048576 )) \
+            $(( _agentbox_cache / 1048576 )) $(( (_agentbox_cache % 1048576) * 10 / 1048576 ))
+    fi
+    unset _agentbox_home _agentbox_cache _agentbox_warn
+fi
+unset _agentbox_disk

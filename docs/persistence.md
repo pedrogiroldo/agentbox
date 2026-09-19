@@ -150,6 +150,26 @@ newer image changes that same file, your version wins — it is in the state
 volume, and the state volume is laid down last. `agentbox-persist forget <path>`
 hands the file back to the image.
 
+### The one thing the overlay edits on its own
+
+Everything under the watched paths that is newer than the image is yours by
+definition — including the releases `collie update` leaves behind, which
+Collie cannot always remove (see [collie.md](collie.md)). Left alone, the
+overlay would carry every release ever installed and lay all of them back
+down at every boot. So before each save, and before a restore, the box prunes
+the Collie tree to the current release and its predecessor, in `/opt` and in
+the overlay's copy of it. That is the only path the overlay ever edits
+without a `save` or a `forget`, and it is confined to `/opt/collie/versions`.
+
+### When the disk fills
+
+The home is yours and the box does not clean it. It does say what it would
+clean: `agentbox-clean` lists the package-manager and tool caches, what each
+would free, and — separately, never touched — your repositories, worktrees
+and agent state. A verb reclaims. [small-vps.md](small-vps.md) has the
+details, including the apt archive in the state volume, which stays: it is
+what makes the package replay work offline.
+
 ## Fresh start
 
 ```sh

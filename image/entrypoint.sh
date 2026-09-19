@@ -17,6 +17,17 @@ die()  { printf '%s[agentbox] fatal:%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1;
 id "$USER_NAME" >/dev/null 2>&1 || die "user '$USER_NAME' does not exist in this image"
 
 # ---------------------------------------------------------------------------
+# 0. Split the box in two, before anything else exists to be on either side
+#
+# Everything this script starts inherits the control group it puts itself in:
+# sshd, the herdr server, Collie, tailscaled. Panes and SSH shells move
+# themselves to the workload group as they open. The point is that the box
+# keeps answering when the agents saturate it -- see docs/small-vps.md. Never
+# fatal unless AGENTBOX_ISOLATION=cgroup asked for it to be.
+# ---------------------------------------------------------------------------
+agentbox-cgroup setup || die "AGENTBOX_ISOLATION=cgroup but the control groups could not be set up (reason above)"
+
+# ---------------------------------------------------------------------------
 # 1. Match the host's uid/gid — only needed when the home is a bind mount
 # ---------------------------------------------------------------------------
 ids_changed=0
@@ -257,6 +268,10 @@ fi
 if [ "${AGENTBOX_HERDR_SERVER:-1}" != "0" ]; then
     agentbox-herdr start || warn "the herdr server is not running — sessions will start on first login instead"
 fi
+# The server owns every pane; if the kernel ever has to kill something, it
+# should be an agent, not this. Repeated at the end of the background chain
+# for the services that start there.
+agentbox-cgroup protect
 
 # The integrations report each agent's state to the pane, so the sidebar shows
 # which agent is working and which one is waiting on you.
@@ -276,6 +291,10 @@ fi
 # It goes over the server's socket, so a server that did not come up means this
 # cannot work either -- and saying which of the two broke beats one opaque line.
 if [ -e /opt/collie/current/herdr-plugin.toml ]; then
+    # An in-place update leaves the release it replaced behind, and the one
+    # before that, and so on: Collie cannot rename a directory out of the image
+    # layer and stops trying. Keep the current release and one predecessor.
+    agentbox-collie prune || warn "could not prune old collie releases"
     if agentbox-herdr status >/dev/null 2>&1; then
         as_user herdr plugin link /opt/collie/current >/dev/null 2>&1 \
             || warn "could not link the collie plugin into herdr — the collie command still works"
@@ -317,6 +336,7 @@ fi
     # about sshd should ever wait on them.
     agentbox-tailscaled ensure || warn "this box has not joined a tailnet"
     agentbox-collie ensure || warn "collie is not running in this box"
+    agentbox-cgroup protect
 
     if [ -f "$provision" ]; then
         {
@@ -331,6 +351,20 @@ fi
 # below, by this script, so this is only the periodic pass.
 if [ "${AGENTBOX_PERSIST:-1}" != "0" ] && [ "${AGENTBOX_PERSIST_INTERVAL:-300}" != "0" ]; then
     agentbox-persist watch &
+fi
+
+# Nothing is cleaned unless asked: AGENTBOX_CLEAN_INTERVAL is off by default,
+# and the timer only ever runs the `caches` tier. It is housekeeping, so it
+# runs as workload, not control plane.
+if [ "${AGENTBOX_CLEAN_INTERVAL:-0}" -gt 0 ] 2>/dev/null; then
+    log "cleaning caches every ${AGENTBOX_CLEAN_INTERVAL}s (log: $PERSIST_DIR/log/clean.log)"
+    (
+        agentbox-cgroup enter work $$ >/dev/null 2>&1 || true
+        while true; do
+            sleep "$AGENTBOX_CLEAN_INTERVAL"
+            { echo "=== $(date -Is)"; agentbox-clean caches; } >> "$PERSIST_DIR/log/clean.log" 2>&1
+        done
+    ) &
 fi
 
 # ---------------------------------------------------------------------------

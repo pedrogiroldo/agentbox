@@ -43,11 +43,19 @@ warn() { printf '%s[agentbox]%s %s\n' "$c_warn" "$c_off" "$*" >&2; }
 USER_SHELL="$(getent passwd "$USER_NAME" | cut -d: -f7)"
 USER_SHELL="${USER_SHELL:-/bin/bash}"
 
+# What the server is actually handed as SHELL is a wrapper, not the shell: the
+# server is control plane (weighted ahead of the workload, see agentbox-cgroup)
+# and every pane would inherit that. The wrapper moves the pane into the
+# workload group, restores SHELL to the real shell, and execs it -- so inside
+# a pane nothing is different. The real shell rides along in its own variable.
+PANE_SHELL=/usr/local/bin/agentbox-pane-shell
+[ -x "$PANE_SHELL" ] || PANE_SHELL="$USER_SHELL"
+
 as_user() {
     if [ "$(id -un)" = "$USER_NAME" ]; then
-        env SHELL="$USER_SHELL" "$@"
+        env SHELL="$PANE_SHELL" AGENTBOX_PANE_SHELL="$USER_SHELL" "$@"
     else
-        runuser -u "$USER_NAME" -- env SHELL="$USER_SHELL" "$@"
+        runuser -u "$USER_NAME" -- env SHELL="$PANE_SHELL" AGENTBOX_PANE_SHELL="$USER_SHELL" "$@"
     fi
 }
 

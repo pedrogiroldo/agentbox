@@ -84,3 +84,15 @@ jobs:
       # phone.
       - name: Collie smoke test
         run: tests/collie.sh agentbox:test
+
+      # The box under load: that sshd and the herdr server are scheduled ahead
+      # of the panes, that a login still completes with the workload group
+      # saturated, and -- the one thing a design cannot prove on paper -- that
+      # `docker exec` still works once the container's root delegates cgroup
+      # controllers to its children.
+      - name: Isolation smoke test
+        run: tests/isolation.sh agentbox:test
+
+      # agentbox-clean: reports first, touches only what it listed.
+      - name: Clean smoke test
+        run: tests/clean.sh agentbox:test

@@ -176,6 +176,10 @@ start() {
     read -r -a extra_args <<< "$(storage_args)"
     log "starting the docker daemon (log: $LOG)"
 
+    # Its own group, not the control plane's and not the workload's: the daemon
+    # makes cgroups for the containers it runs, under wherever it sits, and
+    # those should get default weights rather than either side's.
+    agentbox-cgroup enter docker $$ >/dev/null 2>&1 || true
     dockerd "${extra_args[@]}" >>"$LOG" 2>&1 &
     echo $! > "$PIDFILE"
 

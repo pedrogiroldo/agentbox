@@ -90,6 +90,22 @@ docker compose -f docker-compose.yml up -d --force-recreate
 If you build on a constrained server, set `PREINSTALL_NVIM_PLUGINS=false` to
 skip the heaviest step; plugins then install the first time you open Neovim.
 
+### Running on a constrained server
+
+The box keeps `sshd`, the herdr server and Collie scheduled ahead of whatever
+runs in its panes, so a machine full of agents still answers — that is on by
+default and needs nothing from you. What it does need from the host is
+**swap**: the workload is throttled before the control plane is starved, but
+without swap a workload that keeps growing still ends at the OOM killer.
+
+```sh
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
+[small-vps.md](small-vps.md) has the measured numbers, the variables, and
+what `agentbox-clean` reclaims when the disk fills.
+
 > Packages pushed to GHCR start out **private**. If you forked this repo and
 > want to pull the image without logging in, open the package on GitHub
 > (Profile → Packages → agentbox) and set its visibility to public.

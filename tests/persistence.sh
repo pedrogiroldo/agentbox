@@ -57,6 +57,9 @@ step "installing things the way you would"
 in_box 'apt-get update -qq && apt-get install -y -qq whois' >/dev/null
 in_box 'printf "#!/bin/sh\necho hello\n" > /usr/local/bin/hello && chmod +x /usr/local/bin/hello'
 in_box 'echo "answer = 42" > /etc/agentbox-test.conf'
+# Releases an in-place `collie update` would leave behind: the overlay must
+# carry the predecessor and not the older ones.
+in_box 'mkdir -p /opt/collie/versions/0.1.0 /opt/collie/versions/0.2.0 && touch /opt/collie/versions/0.1.0/x /opt/collie/versions/0.2.0/x'
 in_box 'agentbox-persist save' >/dev/null
 in_box 'agentbox-persist status'
 
@@ -68,6 +71,9 @@ pass "second boot"
 step "checking what came back"
 in_box 'test -x /usr/local/bin/hello' && pass "/usr/local/bin/hello" || fail "/usr/local/bin/hello is gone"
 in_box 'grep -q "answer = 42" /etc/agentbox-test.conf' && pass "/etc/agentbox-test.conf" || fail "/etc file is gone"
+in_box 'test -e /opt/collie/versions/0.2.0/x && test ! -e /opt/collie/versions/0.1.0' \
+    && pass "the previous collie release came back, the one before it did not" \
+    || fail "collie releases after a recreate: $(in_box 'ls /opt/collie/versions | tr "\n" " "')"
 
 # The package replay runs in the background, after sshd is up.
 for _ in $(seq 90); do

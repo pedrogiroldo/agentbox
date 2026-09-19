@@ -113,6 +113,26 @@ else
     fail "not owned by the user, so an in-place update will hit EACCES: $foreign"
 fi
 
+# `collie update` leaves the release it replaced behind (it cannot rename a
+# directory out of the image layer, and stops trying). The box keeps the
+# current release and one predecessor, at boot and before each save, and
+# leaves anything staged newer than current alone.
+current_rel="$(in_box 'basename "$(readlink -f /opt/collie/current)"')"
+in_box 'mkdir -p /opt/collie/versions/0.1.0 /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged /opt/collie/.trash/x && chown -R dev:dev /opt/collie/versions/0.1.0 /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged'
+in_box 'agentbox-persist save' >/dev/null 2>&1 || true
+left="$(in_box 'ls /opt/collie/versions | sort -V | tr "\n" " "')"
+if in_box 'test ! -e /opt/collie/versions/0.1.0 && test -e /opt/collie/versions/0.2.0 && test -e /opt/collie/versions/99.0.0-staged && test ! -e /opt/collie/.trash'; then
+    pass "prune keeps $current_rel and its predecessor, spares a staged release, empties .trash (left: $left)"
+else
+    fail "prune left the wrong set: $left"
+fi
+if in_box 'test ! -e /var/lib/agentbox/overlay/opt/collie/versions/0.1.0 && test -e /var/lib/agentbox/overlay/opt/collie/versions/0.2.0'; then
+    pass "the state volume holds the same set"
+else
+    fail "the overlay disagrees: $(in_box 'ls /var/lib/agentbox/overlay/opt/collie/versions 2>/dev/null | tr "\n" " "')"
+fi
+in_box 'rm -rf /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged /var/lib/agentbox/overlay/opt/collie/versions/0.2.0 /var/lib/agentbox/overlay/opt/collie/versions/99.0.0-staged' >/dev/null 2>&1 || true
+
 # ---------------------------------------------------------------------------
 step "2. The herdr server is up before anyone logs in"
 # ---------------------------------------------------------------------------
@@ -136,16 +156,30 @@ fi
 # The server spawns every pane, so its environment decides the shell. Started
 # by root at boot there is no $SHELL to inherit, and herdr then falls back to
 # /bin/sh -- a terminal that is not the user's, on a box that set bash for them.
-# Read as the user: in an unprivileged container root has no CAP_SYS_PTRACE,
-# and /proc/<pid>/environ of someone else's process is Permission denied.
-server_shell="$(as_dev 'tr "\\0" "\\n" < /proc/$(pgrep -f "herdr server" | head -1)/environ | sed -n "s/^SHELL=//p"' 2>/dev/null || true)"
+# What the server is handed is the isolation wrapper, which moves the pane into
+# the workload group and execs the user's real shell; that shell rides along
+# in AGENTBOX_PANE_SHELL. Read as the user: in an unprivileged container root
+# has no CAP_SYS_PTRACE, and /proc/<pid>/environ of someone else's process is
+# Permission denied.
+server_env="$(as_dev 'tr "\\0" "\\n" < /proc/$(pgrep -f "herdr server" | head -1)/environ' 2>/dev/null || true)"
+server_shell="$(printf '%s\n' "$server_env" | sed -n 's/^SHELL=//p')"
+pane_shell="$(printf '%s\n' "$server_env" | sed -n 's/^AGENTBOX_PANE_SHELL=//p')"
 user_shell="$(in_box 'getent passwd dev | cut -d: -f7' 2>/dev/null || true)"
-if [ -n "$server_shell" ] && [ "$server_shell" = "$user_shell" ]; then
-    pass "the herdr server carries SHELL=$server_shell, so panes open the user's shell"
+if [ "$server_shell" = "/usr/local/bin/agentbox-pane-shell" ] && [ -n "$pane_shell" ] && [ "$pane_shell" = "$user_shell" ]; then
+    pass "the herdr server opens panes through the wrapper, carrying the user's shell ($user_shell)"
 else
-    fail "the herdr server has SHELL='${server_shell:-unset}' (user's is $user_shell) — panes will open /bin/sh"
+    fail "the herdr server has SHELL='${server_shell:-unset}' and AGENTBOX_PANE_SHELL='${pane_shell:-unset}' (user's shell is $user_shell)"
     as_dev 'ps -o pid,ppid,lstart,args -C herdr; for p in $(pgrep -f "herdr server"); do echo "--- $p"; tr "\\0" "\\n" < /proc/$p/environ | cut -d= -f1 | tr "\\n" " "; echo; done' 2>&1 | sed 's/^/      /'
     docker logs "$NAME" 2>&1 | grep -i herdr | sed 's/^/      /'
+fi
+
+# And what a pane actually gets: the wrapper run the way herdr runs it.
+inside="$(docker exec -u dev -e AGENTBOX_PANE_SHELL="$user_shell" "$NAME" \
+    /usr/local/bin/agentbox-pane-shell -c 'echo "$SHELL|$0"' 2>/dev/null || true)"
+if [ "$inside" = "$user_shell|$user_shell" ]; then
+    pass "inside a pane the process is $user_shell and SHELL says so"
+else
+    fail "inside a pane: SHELL|\$0 = '$inside', expected '$user_shell|$user_shell'"
 fi
 
 # ---------------------------------------------------------------------------

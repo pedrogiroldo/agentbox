@@ -33,6 +33,30 @@ if [ -n "${TERM:-}" ] && [ "${TERM}" != "dumb" ]; then
     unset _agentbox_initial _agentbox_terminfo _agentbox_dir
 fi
 
+# A shell that arrives over SSH inherits sshd's place in the control plane --
+# the group the box weights ahead of its workload so that logins are fast even
+# when the agents have saturated the machine. The login is done by now, and
+# whatever this shell runs next (a build, a test suite, `herdr` itself) is
+# workload. Move it, once, and only for the user: root shells are the rescue
+# path and stay where they are. Panes arrive already moved, so this is a
+# no-op for them -- no sudo per pane.
+if [ "$(id -u)" != "0" ] && [ -r /run/agentbox-isolation ] && [ -x /usr/local/bin/agentbox-cgroup ]; then
+    _agentbox_mode="$(cat /run/agentbox-isolation 2>/dev/null)"
+    _agentbox_move=""
+    case "${_agentbox_mode%%:*}" in
+        cgroup)
+            case "$(cat /proc/self/cgroup 2>/dev/null)" in
+                */control) _agentbox_move=1 ;;
+            esac ;;
+        nice)
+            _agentbox_nice="$(nice 2>/dev/null || echo 0)"
+            [ "${_agentbox_nice:-0}" -lt 0 ] 2>/dev/null && _agentbox_move=1
+            unset _agentbox_nice ;;
+    esac
+    [ -z "$_agentbox_move" ] || sudo -n /usr/local/bin/agentbox-cgroup enter work $$ >/dev/null 2>&1
+    unset _agentbox_mode _agentbox_move
+fi
+
 # Neovim reads this to enable 24-bit color over SSH/mosh.
 export COLORTERM="${COLORTERM:-truecolor}"
 export EDITOR="${EDITOR:-nvim}"
