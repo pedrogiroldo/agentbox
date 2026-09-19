@@ -83,6 +83,21 @@ Two variables, in `.env`:
 `nice -10`, the workload at 0. That protects CPU, not memory; `agentbox-cgroup
 status` says so.
 
+**A service restarted by hand goes back to being workload.** Placement is
+inherited, so only what the entrypoint starts inherits `control/`. Restart
+something from a pane — or let Collie's own updater restart it, which is what
+taking an update from the phone does — and it comes back in `work/`, weighted
+behind the agents it exists to let you watch and ahead of them in the queue to
+be killed. `agentbox-collie start` puts the bridge back itself; for anything
+else, `status` names the drift and `protect` is the repair:
+
+```
+agentbox-cgroup status
+  plane:  herdr server  /control oom -1000
+          collie        /work oom 0  <- workload: restarted outside the box's own start — `agentbox-cgroup protect` puts it back
+          tailscaled    /control oom -900
+```
+
 ### It prunes what it manages
 
 `collie update` stages the new release beside the old one and tries to move
