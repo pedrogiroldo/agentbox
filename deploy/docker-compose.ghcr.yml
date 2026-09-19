@@ -67,6 +67,18 @@ services:
       # starting Collie, so all that is left is saying yes on the phone.
       AGENTBOX_COLLIE_PUSH: "1"
       COLLIE_PUSH_SUBJECT: ""
+      # A box full of agents still answers SSH and Collie: the services you
+      # need to see and act are scheduled ahead of the panes. auto uses
+      # cgroups when the container allows, priorities otherwise. Memory kept
+      # for them is derived from the box's size; set e.g. "512M" to choose.
+      # docs/small-vps.md has the rest, including why the host wants swap.
+      AGENTBOX_ISOLATION: "auto"
+      AGENTBOX_CONTROL_RESERVE: ""
+      # The box cleans package-manager caches on its own once the home passes
+      # this size or the disk has less than this much free; `agentbox-clean`
+      # in the box says what is cache and what is yours. 0 turns a trigger off.
+      AGENTBOX_CLEAN_AT: "20G"
+      AGENTBOX_CLEAN_MIN_FREE: "2G"
 
     volumes:
       - agentbox-home:/home/dev

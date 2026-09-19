@@ -269,6 +269,7 @@ A outra: as credenciais dos agentes ficam em texto claro no volume.
 - [Docker](docs/docker.md) — o daemon de dentro, o container privilegiado, as alternativas
 - [Espelhamento](docs/mirror.md) — o mesmo projeto no seu computador, builds de Android, ignores
 - [Segurança](docs/security.md) — exposição, Docker, raio de alcance
+- [VPS pequena](docs/small-vps.md) — o box continua respondendo com a máquina cheia; o que é cache e como recuperar disco
 
 ## Créditos
 

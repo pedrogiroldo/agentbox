@@ -178,8 +178,20 @@ test-collie: build ## Check that Collie ships installed, dead, and honest about 
 test-mirror: build ## Check what the box tells you about mirroring
 	tests/mirror.sh $(IMAGE)
 
+test-isolation: build ## Check that the box stays reachable when its agents saturate it
+	tests/isolation.sh $(IMAGE)
+
+test-clean: build ## Check that agentbox-clean reports first and touches only caches
+	tests/clean.sh $(IMAGE)
+
 persist: ## Show what survives a recreate (packages and files kept)
 	$(COMPOSE) exec $(SERVICE) agentbox-persist status
+
+clean: ## What is on the disk and what of it is cache: make clean [VERB=caches|browsers|docker|all]
+	$(COMPOSE) exec -u $(SSH_USER) $(SERVICE) agentbox-clean $(VERB)
+
+isolation: ## Which protections keep the box reachable under load
+	$(COMPOSE) exec $(SERVICE) agentbox-cgroup status
 
 destroy: ## Delete the container AND both volumes — the fresh start (irreversible)
 	@echo "This deletes '$(VOLUME)' (your home), '$(STATE)' (packages and"
@@ -189,4 +201,4 @@ destroy: ## Delete the container AND both volumes — the fresh start (irreversi
 	  [ "$$answer" = "$(VOLUME)" ] || { echo "aborted"; exit 1; }
 	$(COMPOSE) down -v
 
-.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test test-docker test-mirror mirror mirror-status unmirror persist destroy
+.PHONY: help key init build up hint down restart logs ps ssh shell root update backup restore test test-docker test-collie test-mirror test-isolation test-clean mirror mirror-status unmirror persist clean isolation destroy

@@ -105,6 +105,23 @@ services:
       AGENTBOX_PERSIST_INTERVAL: ${AGENTBOX_PERSIST_INTERVAL:-300}
       # Set to "force" once to restore the config files shipped in the image.
       AGENTBOX_RESEED: ${AGENTBOX_RESEED:-}
+      # --- staying reachable on a small machine (docs/small-vps.md) ---
+      # sshd, the herdr server, Collie and tailscaled are scheduled ahead of
+      # whatever runs in the panes, so a box full of agents still answers.
+      # auto (default) uses cgroups when the container allows and falls back
+      # to process priorities; cgroup | nice | off pick one.
+      AGENTBOX_ISOLATION: ${AGENTBOX_ISOLATION:-auto}
+      # Memory kept for those services (e.g. 512M). Empty derives it from the
+      # box's memory; 0 keeps only the CPU weighting.
+      AGENTBOX_CONTROL_RESERVE: ${AGENTBOX_CONTROL_RESERVE:-}
+      # The box cleans package-manager caches on its own once the home passes
+      # this size or the disk under it has less than this much free; below
+      # both, warm caches stay. 0 turns a trigger off. Repositories, worktrees
+      # and agent state are never touched.
+      AGENTBOX_CLEAN_AT: ${AGENTBOX_CLEAN_AT:-20G}
+      AGENTBOX_CLEAN_MIN_FREE: ${AGENTBOX_CLEAN_MIN_FREE:-2G}
+      # A timer as well, in seconds; 0 (default) means none.
+      AGENTBOX_CLEAN_INTERVAL: ${AGENTBOX_CLEAN_INTERVAL:-0}
       # Only needed when /home/dev is a bind mount and uids must match the host.
       PUID: ${PUID:-}
       PGID: ${PGID:-}

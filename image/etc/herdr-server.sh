@@ -36,11 +36,26 @@ c_info=$'\033[36m'; c_warn=$'\033[33m'; c_off=$'\033[0m'
 log()  { printf '%s[agentbox]%s %s\n' "$c_info" "$c_off" "$*"; }
 warn() { printf '%s[agentbox]%s %s\n' "$c_warn" "$c_off" "$*" >&2; }
 
+# The shell every pane opens with. herdr reads $SHELL, then falls back to
+# /bin/sh -- and at boot there is no $SHELL: runuser without a login shell
+# carries over whatever the entrypoint had, which is nothing. The passwd entry
+# is the one that a `chsh` changes, so that is the one to hand over.
+USER_SHELL="$(getent passwd "$USER_NAME" | cut -d: -f7)"
+USER_SHELL="${USER_SHELL:-/bin/bash}"
+
+# What the server is actually handed as SHELL is a wrapper, not the shell: the
+# server is control plane (weighted ahead of the workload, see agentbox-cgroup)
+# and every pane would inherit that. The wrapper moves the pane into the
+# workload group, restores SHELL to the real shell, and execs it -- so inside
+# a pane nothing is different. The real shell rides along in its own variable.
+PANE_SHELL=/usr/local/bin/agentbox-pane-shell
+[ -x "$PANE_SHELL" ] || PANE_SHELL="$USER_SHELL"
+
 as_user() {
     if [ "$(id -un)" = "$USER_NAME" ]; then
-        "$@"
+        env SHELL="$PANE_SHELL" AGENTBOX_PANE_SHELL="$USER_SHELL" "$@"
     else
-        runuser -u "$USER_NAME" -- "$@"
+        runuser -u "$USER_NAME" -- env SHELL="$PANE_SHELL" AGENTBOX_PANE_SHELL="$USER_SHELL" "$@"
     fi
 }
 

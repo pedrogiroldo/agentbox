@@ -241,6 +241,7 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 COPY image/etc/env.sh /etc/agentbox/env.sh
 COPY image/etc/sshd_config /etc/ssh/sshd_config
+COPY image/etc/sshrc /etc/ssh/sshrc
 COPY image/etc/make-motd.sh /usr/local/bin/agentbox-make-motd
 COPY image/etc/banner.sh /usr/local/bin/agentbox-banner
 COPY image/etc/greet.sh /etc/agentbox/greet.sh
@@ -250,6 +251,9 @@ COPY image/etc/mirror.sh /usr/local/bin/agentbox-mirror
 COPY image/etc/collie.sh /usr/local/bin/agentbox-collie
 COPY image/etc/tailscaled.sh /usr/local/bin/agentbox-tailscaled
 COPY image/etc/herdr-server.sh /usr/local/bin/agentbox-herdr
+COPY image/etc/cgroup.sh /usr/local/bin/agentbox-cgroup
+COPY image/etc/pane-shell.sh /usr/local/bin/agentbox-pane-shell
+COPY image/etc/clean.sh /usr/local/bin/agentbox-clean
 COPY image/entrypoint.sh /usr/local/bin/agentbox-entrypoint
 COPY image/skel/ /opt/agentbox/skel/
 
@@ -258,7 +262,8 @@ RUN set -eux; \
         /usr/local/bin/agentbox-banner /usr/local/bin/agentbox-persist \
         /usr/local/bin/agentbox-dockerd /usr/local/bin/agentbox-mirror \
         /usr/local/bin/agentbox-collie /usr/local/bin/agentbox-herdr \
-        /usr/local/bin/agentbox-tailscaled; \
+        /usr/local/bin/agentbox-tailscaled /usr/local/bin/agentbox-cgroup \
+        /usr/local/bin/agentbox-pane-shell /usr/local/bin/agentbox-clean; \
     # /etc/agentbox/greet.sh prints the banner and the motd, in that order.
     # PAM would print the motd first (plus Ubuntu's motd-news noise), so mute it.
     sed -i 's/^session\s*optional\s*pam_motd/# &/' /etc/pam.d/sshd; \

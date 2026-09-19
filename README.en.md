@@ -260,6 +260,7 @@ The other: agent credentials sit in the volume in plaintext.
 - [Docker](docs/docker.md) — the daemon inside, the privileged container, the alternatives
 - [Mirroring](docs/mirror.md) — the same project on your laptop, Android builds, ignores
 - [Security](docs/security.md) — exposure, Docker, blast radius
+- [A small VPS](docs/small-vps.md) — the box keeps answering when the machine is full; what is cache and how to get disk back
 
 ## Credits
 

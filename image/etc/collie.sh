@@ -26,6 +26,9 @@
 #   start   preflight herdr, then hand off to `collie start`
 #   stop    hand off to `collie stop`
 #   status  what the box is doing about Collie, if anything
+#   prune   remove the releases an in-place update left behind (keeps the
+#           current one and its predecessor); [dir] prunes another copy of
+#           the tree, which is how the state volume gets the same treatment
 #
 # start/stop delegate rather than launching the bridge themselves, because
 # herdr's own Collie buttons call Collie's control script. Two managers with two
@@ -227,6 +230,67 @@ status() {
     return 1
 }
 
+# Old releases. `collie update` stages the next release beside the current one
+# and moves the old one into .trash with rename(2). The release the image
+# shipped is a directory in the overlayfs lower layer, and renaming one of
+# those out needs a mount option Docker does not set, so it fails with EXDEV;
+# Collie logs "harmless where it is" and never comes back for it -- or for
+# the ones after it. Eight releases at 84 MB each, on the box this was found
+# on, and every one of them newer than the image stamp, so the persistence
+# layer copied them all into the state volume and laid them back down at
+# every boot.
+#
+# rm -rf works where rename does not: overlayfs covers a removal with a
+# whiteout. Keep the release `current` points at and the newest one older
+# than it (a rollback costs 84 MB), leave anything *newer* than current alone
+# (an update caught between staging and flipping the link), and remove the
+# rest. Refuse on a layout that is not the installer's, and say so once.
+#
+# The optional argument is the tree to prune; agentbox-persist passes its own
+# copy of /opt/collie, so the state volume gets the same treatment.
+prune() {
+    local base="${1:-/opt/collie}" versions cur cur_name
+    versions="$base/versions"
+    [ -d "$versions" ] || return 0
+
+    cur="$(readlink -f "$base/current" 2>/dev/null)" || cur=""
+    case "$cur" in
+        "$versions"/*) cur_name="${cur#"$versions"/}"; cur_name="${cur_name%%/*}" ;;
+        *) log "not pruning $base: 'current' does not resolve into versions/ (${cur:-missing})"; return 0 ;;
+    esac
+    [ -d "$versions/$cur_name" ] || { log "not pruning $base: current points at a missing release ($cur_name)"; return 0; }
+
+    # Oldest first, by version. `current` splits the list: everything after it
+    # was staged more recently and is not ours to touch.
+    local -a all older
+    mapfile -t all < <(find "$versions" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V)
+    local v seen=0
+    for v in "${all[@]}"; do
+        if [ "$v" = "$cur_name" ]; then seen=1; continue; fi
+        [ "$seen" = 0 ] && older+=("$v")
+    done
+
+    local -a doomed=()
+    if [ "${#older[@]}" -gt 1 ]; then
+        doomed=("${older[@]:0:${#older[@]}-1}")
+    fi
+    [ -d "$base/.trash" ] && [ -n "$(ls -A "$base/.trash" 2>/dev/null)" ] && doomed+=(".trash")
+
+    [ "${#doomed[@]}" -gt 0 ] || return 0
+
+    local size removed=()
+    for v in "${doomed[@]}"; do
+        if [ "$v" = ".trash" ]; then
+            rm -rf -- "$base/.trash" 2>/dev/null && removed+=("$v")
+        else
+            rm -rf -- "${versions:?}/$v" 2>/dev/null && removed+=("$v")
+        fi
+    done
+    [ "${#removed[@]}" -gt 0 ] || return 0
+    log "pruned ${#removed[@]} old collie release(s) from $base: ${removed[*]} (keeping $cur_name${older[*]:+ and ${older[-1]}})"
+    return 0
+}
+
 # Boot path. `off` is a decision, not a failure, so it says nothing and leaves.
 ensure() {
     case "$MODE" in
@@ -241,5 +305,6 @@ case "${1:-status}" in
     start)  start ;;
     stop)   stop ;;
     status) status ;;
-    *) echo "usage: agentbox-collie {ensure|start|stop|status}" >&2; exit 2 ;;
+    prune)  shift; prune "$@" ;;
+    *) echo "usage: agentbox-collie {ensure|start|stop|status|prune [dir]}" >&2; exit 2 ;;
 esac

@@ -117,12 +117,25 @@ changed_files() {
     done
 }
 
+# Release trees the box manages itself get pruned before they are scanned,
+# and the copy already in the overlay gets the same rule -- otherwise a
+# release removed from /opt is laid back down at the next boot. This is the
+# one place the overlay is edited by anything other than save and forget, and
+# it is confined to what agentbox-collie prune knows about.
+prune_managed() {
+    command -v agentbox-collie >/dev/null 2>&1 || return 0
+    agentbox-collie prune >/dev/null 2>&1 || true
+    [ -d "$OVERLAY/opt/collie" ] && agentbox-collie prune "$OVERLAY/opt/collie" >/dev/null 2>&1 || true
+    return 0
+}
+
 cmd_save() {
     need_root save
     enabled || { log "persistence is off (AGENTBOX_PERSIST=0)"; return 0; }
     [ -e "$STAMP" ] || { warn "no build stamp at $STAMP — is this an agentbox image?"; return 1; }
     ensure_dirs
     with_lock || return 1
+    prune_managed
 
     local list volatile
     list="$(mktemp)"; volatile="$(mktemp)"
@@ -148,6 +161,12 @@ cmd_restore() {
     enabled || { log "persistence is off (AGENTBOX_PERSIST=0)"; return 0; }
     ensure_dirs
     [ -n "$(ls -A "$OVERLAY" 2>/dev/null)" ] || return 0
+
+    # A box stopped before its first periodic save may carry releases in the
+    # overlay that /opt has already pruned. Prune the copy first, so they are
+    # not laid back down only to be removed again a moment later.
+    [ -d "$OVERLAY/opt/collie" ] && command -v agentbox-collie >/dev/null 2>&1 \
+        && { agentbox-collie prune "$OVERLAY/opt/collie" >/dev/null 2>&1 || true; }
 
     # Count the files, not the directories rsync walks through. Keep the two
     # steps apart: pipefail would turn an rsync warning into a count of zero.
@@ -272,6 +291,11 @@ cmd_watch() {
     enabled || return 0
     local interval="${AGENTBOX_PERSIST_INTERVAL:-300}"
     [ "$interval" -gt 0 ] 2>/dev/null || return 0
+
+    # Housekeeping is workload, not control plane: its five-minute find over
+    # /usr/local and /opt is exactly the burst the box should not carry at the
+    # control plane's weight.
+    agentbox-cgroup enter work $$ >/dev/null 2>&1 || true
 
     while true; do
         sleep "$interval"

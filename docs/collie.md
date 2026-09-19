@@ -180,6 +180,14 @@ wrinkle: herdr records the plugin by its resolved path, so after an in-place
 update the buttons still point at the previous version until the box restarts
 and re-links. The `collie` command itself is correct immediately.
 
+Each update stages the next release beside the current one and tries to move
+the old one into a trash directory. For the release the image shipped that
+fails — overlayfs cannot rename a directory out of the image layer — and
+Collie leaves it, and every later one, where it is. The box tidies up for it:
+at boot and before each periodic save it keeps the current release and the
+one before it, removes the rest, and drops them from the state volume as
+well. `agentbox-collie prune` runs it by hand.
+
 To pin a version at build time, set `COLLIE_VERSION=v1.6.0` in `.env`. That also
 skips the GitHub API call the build otherwise makes to find the newest tag.
 
