@@ -232,6 +232,31 @@ else
 fi
 undo_fake 0.9.0
 
+# One image bump later. An adoption rewrites `current`, which makes the symlink
+# newer than the build stamp -- so the next save copies it into the state
+# volume, while the release it names came from the image and was never saved
+# beside it. Bump to an image carrying a newer Collie and the restore lays that
+# pointer back down over a versions/ that has never held it. Staged the way a
+# restore leaves it: a pointer at a release this image does not have.
+in_box 'ln -sfn versions/0.0.1 /opt/collie/current' >/dev/null 2>&1 || true
+bump_out="$(in_box 'agentbox-collie prune' 2>&1 || true)"
+if [ "$(in_box 'basename "$(readlink -f /opt/collie/current)"')" = "$current_rel" ]; then
+    pass "a pointer at a release this image never carried is adopted out of, not refused"
+else
+    fail "the box stayed on a dangling current ($(in_box 'readlink /opt/collie/current')): $bump_out"
+fi
+if in_box 'test -x /opt/collie/current/bin/collie' && in_box 'test -e /opt/collie/current/herdr-plugin.toml'; then
+    pass "and the box has a working collie again rather than a dangling symlink"
+else
+    fail "current resolves to nothing usable: $bump_out"
+fi
+if printf '%s' "$bump_out" | grep -q 'keeping it for rollback'; then
+    fail "the adoption claimed a rollback it cannot offer: $bump_out"
+else
+    pass "and does not claim a rollback onto a tree that is not there"
+fi
+in_box "ln -sfn versions/$current_rel /opt/collie/current" >/dev/null 2>&1 || true
+
 # A record the tree cannot honour must refuse, not point `current` at a tree
 # with no working collie in it.
 in_box "mkdir -p /opt/collie/versions/99.0.0/bin && cp /opt/collie/versions/$current_rel/bin/collie /opt/collie/versions/99.0.0/bin/collie && printf '99.0.0\n' > $RECORD" >/dev/null 2>&1 || true

@@ -336,17 +336,29 @@ prune() {
     fi
 
     [ -n "$cur_name" ] || { log "not pruning $base: 'current' does not resolve into versions/ (${cur:-missing})"; return 0; }
-    if [ "$base" = "$LIVE_BASE" ] && [ ! -d "$versions/$cur_name" ]; then
-        log "not pruning $base: current points at a missing release ($cur_name)"
-        return 0
-    fi
 
     # Adoption comes first: it decides which release `current` names, and
     # everything below splits the list on that name. Not a command
     # substitution -- that is a subshell, and it would swallow the line the
     # adoption logs into the variable instead of printing it.
+    #
+    # Ahead of the missing-release refusal below, and that order is
+    # load-bearing: a pointer at a release this image does not carry is the
+    # one state an adoption has to be able to heal. The box saves `current`
+    # once it has been adopted -- the symlink is newer than the build stamp
+    # from then on, so the next save copies it -- while the release it names
+    # came from the image and was never saved beside it. Bump to an image
+    # carrying a newer Collie and the restore lays that pointer back down
+    # over a versions/ that has never held it. Refusing there would strand
+    # the box on a dangling `current` with no working collie and no way out,
+    # which is the deadlock this whole path exists to end, one image apart.
     adopt_image_release "$base" "$versions" "$cur_name"
     cur_name="$CURRENT_RELEASE"
+
+    if [ "$base" = "$LIVE_BASE" ] && [ ! -d "$versions/$cur_name" ]; then
+        log "not pruning $base: current points at a missing release ($cur_name)"
+        return 0
+    fi
 
     # Oldest first, by version. `current` splits the list: everything after it
     # was staged more recently and is not ours to touch. Both initialised:
@@ -446,7 +458,15 @@ adopt_image_release() {
     # versions/ to the pointer beside it, and no further.
     drop_superseded_overlay_pointer "$cur_name"
 
-    log "adopted collie $shipped from the image in $base, replacing $cur_name (keeping it for rollback)"
+    # "keeping it" only where there is something to keep: the pointer can
+    # arrive naming a release this image never carried, which is the state a
+    # restore leaves after an image bump, and claiming a rollback there would
+    # be a lie told to whoever is reading the log because their box broke.
+    if [ -d "$versions/$cur_name" ]; then
+        log "adopted collie $shipped from the image in $base, replacing $cur_name (keeping it for rollback)"
+    else
+        log "adopted collie $shipped from the image in $base, replacing $cur_name (whose tree this image does not carry)"
+    fi
     CURRENT_RELEASE="$shipped"
     return 0
 }
