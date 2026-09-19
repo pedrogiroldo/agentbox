@@ -353,19 +353,14 @@ if [ "${AGENTBOX_PERSIST:-1}" != "0" ] && [ "${AGENTBOX_PERSIST_INTERVAL:-300}" 
     agentbox-persist watch &
 fi
 
-# Nothing is cleaned unless asked: AGENTBOX_CLEAN_INTERVAL is off by default,
-# and the timer only ever runs the `caches` tier. It is housekeeping, so it
-# runs as workload, not control plane.
-if [ "${AGENTBOX_CLEAN_INTERVAL:-0}" -gt 0 ] 2>/dev/null; then
-    log "cleaning caches every ${AGENTBOX_CLEAN_INTERVAL}s (log: $PERSIST_DIR/log/clean.log)"
-    (
-        agentbox-cgroup enter work $$ >/dev/null 2>&1 || true
-        while true; do
-            sleep "$AGENTBOX_CLEAN_INTERVAL"
-            { echo "=== $(date -Is)"; agentbox-clean caches; } >> "$PERSIST_DIR/log/clean.log" 2>&1
-        done
-    ) &
-fi
+# The disk watcher: measures the home hourly for the login greeting, and runs
+# the caches tier -- the one that breaks nothing -- on its own once the home
+# passes AGENTBOX_CLEAN_AT or the disk under it runs low. Housekeeping, so it
+# is workload, not control plane. docs/small-vps.md.
+(
+    agentbox-cgroup enter work $$ >/dev/null 2>&1 || true
+    exec agentbox-clean watch
+) &
 
 # ---------------------------------------------------------------------------
 # 11. Hand over to sshd

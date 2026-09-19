@@ -297,19 +297,9 @@ cmd_watch() {
     # control plane's weight.
     agentbox-cgroup enter work $$ >/dev/null 2>&1 || true
 
-    # The disk figures the login greeting reads: the home's size and how much
-    # of it is cache. A du of a big home is minutes on a small box, so this
-    # runs on the first pass and then hourly, never at login.
-    local pass=0 every=$(( 3600 / interval )); [ "$every" -lt 1 ] && every=1
     while true; do
         sleep "$interval"
         cmd_save >>"$LOG_DIR/persist.log" 2>&1
-        if [ $((pass % every)) -eq 0 ] && command -v agentbox-clean >/dev/null 2>&1; then
-            nice -n 19 agentbox-clean measure > "$STATE_ROOT/.disk.tmp" 2>/dev/null \
-                && mv "$STATE_ROOT/.disk.tmp" "$STATE_ROOT/.disk" \
-                && chmod 0644 "$STATE_ROOT/.disk"
-        fi
-        pass=$((pass + 1))
     done
 }
 

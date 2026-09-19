@@ -74,10 +74,11 @@ services:
       # docs/small-vps.md has the rest, including why the host wants swap.
       AGENTBOX_ISOLATION: "auto"
       AGENTBOX_CONTROL_RESERVE: ""
-      # Nothing is cleaned unless asked; `agentbox-clean` in the box says what
-      # is cache and reclaims it on request. Seconds between automatic passes
-      # over the caches; 0 means never.
-      AGENTBOX_CLEAN_INTERVAL: "0"
+      # The box cleans package-manager caches on its own once the home passes
+      # this size or the disk has less than this much free; `agentbox-clean`
+      # in the box says what is cache and what is yours. 0 turns a trigger off.
+      AGENTBOX_CLEAN_AT: "20G"
+      AGENTBOX_CLEAN_MIN_FREE: "2G"
 
     volumes:
       - agentbox-home:/home/dev

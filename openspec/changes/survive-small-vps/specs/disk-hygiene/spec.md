@@ -81,31 +81,43 @@ images that a running or stopped container still uses.
   no container uses and an image a stopped container uses
 - **THEN** the unused image is removed and the other is kept
 
-### Requirement: Nothing is cleaned automatically by default
+### Requirement: The box cleans caches on its own once the disk is tight
 
-The box SHALL NOT delete any cache on its own unless the operator sets
-`AGENTBOX_CLEAN_INTERVAL` to a number of seconds, in which case it SHALL run
-the `caches` tier at that interval and log what it did to the state volume.
-The default SHALL be off.
+The box SHALL measure the home volume periodically and, when the home exceeds
+`AGENTBOX_CLEAN_AT` (default `20G`) or the filesystem under it has less than
+`AGENTBOX_CLEAN_MIN_FREE` (default `2G`) free, SHALL run the `caches` tier on
+its own and log what it did to the state volume. Below both lines it SHALL
+remove nothing, so a box with room keeps its caches warm. Only the `caches`
+tier SHALL ever run unattended; `browsers` and `docker` SHALL NOT. Setting a
+trigger to `0` SHALL disable it. `AGENTBOX_CLEAN_INTERVAL`, when set to a
+number of seconds, SHALL add an unconditional `caches` pass at that interval.
 
-#### Scenario: The shipped default
+#### Scenario: Room to spare
 
-- **WHEN** a box runs for longer than any interval with
-  `AGENTBOX_CLEAN_INTERVAL` unset
+- **WHEN** a box runs with a home below the size line and free space above
+  the minimum
 - **THEN** no cache has been removed by the box
 
-#### Scenario: Opted in
+#### Scenario: Over the line
 
-- **WHEN** the box runs with `AGENTBOX_CLEAN_INTERVAL` set
-- **THEN** the `caches` tier runs at that interval and its result is logged
+- **WHEN** the home grows past the size line, or free space drops below the
+  minimum
+- **THEN** within one measurement period the `caches` tier has run, its
+  result is logged, and the operator's data is unchanged
 
-### Requirement: The login greeting says when cleaning is worth it
+#### Scenario: Turned off
 
-When the home volume exceeds a threshold, `AGENTBOX_CLEAN_WARN`, or when the
-rebuildable share exceeds half of the home, the greeting shown at login SHALL
-add one line giving the home's size, the rebuildable amount and the command
-to run. Below the threshold it SHALL add nothing. The figures MAY be up to one
-save interval stale; the command itself SHALL measure live.
+- **WHEN** the box runs with `AGENTBOX_CLEAN_AT=0` and
+  `AGENTBOX_CLEAN_MIN_FREE=0`
+- **THEN** no cache is removed by the box however full the disk gets
+
+### Requirement: The login greeting says where the disk stands
+
+When the home volume exceeds `AGENTBOX_CLEAN_AT`, or when the rebuildable
+share exceeds half of the home, the greeting shown at login SHALL add one
+line giving the home's size, the rebuildable amount and the command to run.
+Below the threshold it SHALL add nothing. The figures MAY be up to one
+measurement period stale; the command itself SHALL measure live.
 
 #### Scenario: Below the threshold
 

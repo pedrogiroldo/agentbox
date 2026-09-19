@@ -29,8 +29,8 @@
 - [x] 5.1 Write `image/etc/clean.sh` (`agentbox-clean`) with the tier table (path, measure, reclaim) driving both the report and the verbs, the fixed "yours" list, `--dry-run`, and the no-verb report that deletes nothing; verify the report on a populated home and that a file count before and after is identical
 - [x] 5.2 Implement the `caches` verb: each tool's own prune with a timeout and a skip message, npx entries older than seven days, superseded plugin cache versions, `~/.claude.json.tmp.*`, Trash; verify on a home with seeded caches that each is reduced and the "yours" paths are untouched
 - [x] 5.3 Implement the `browsers`, `docker` and `all` verbs; verify `caches` leaves browsers in place, `browsers` names the reinstall command, and `docker` removes only unreferenced images
-- [x] 5.4 Add `AGENTBOX_CLEAN_INTERVAL` (default off) as a timer the entrypoint starts in `work`, logging to the state volume; verify it runs the `caches` tier at the interval when set and never when unset
-- [x] 5.5 Add the motd line: the persist watcher caches home size and rebuildable share on its pass, `greet.sh` prints the line above `AGENTBOX_CLEAN_WARN` (default `20G`) or above a half rebuildable share; verify by seeding the cache file with values on both sides of the threshold
+- [x] 5.4 Add `agentbox-clean watch`, started by the entrypoint in `work`: measures hourly, runs the `caches` tier past `AGENTBOX_CLEAN_AT` or under `AGENTBOX_CLEAN_MIN_FREE`, logs to the state volume; `AGENTBOX_CLEAN_INTERVAL` adds a timer; verify it cleans over the line and never under it
+- [x] 5.5 Add the motd line: the watcher writes home size, rebuildable share and free space, `greet.sh` prints the line above `AGENTBOX_CLEAN_AT` (default `20G`) or above a half rebuildable share; verify by seeding the figures on both sides of the threshold
 - [x] 5.6 Add `make clean` (report and verbs) to the Makefile and document `agentbox-clean` in `docs/small-vps.md` and `docs/persistence.md`; verify `make clean` prints the in-box report
 
 ## 6. Tests and CI

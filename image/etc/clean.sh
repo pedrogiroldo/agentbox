@@ -29,8 +29,23 @@
 # What this never does: delete anything not in the tables below. A path the
 # box does not know is not "reclaimable" just because it is big.
 #
-# AGENTBOX_CLEAN_INTERVAL  seconds between automatic `caches` passes. Default
-#                          off; the entrypoint starts the timer when set.
+# The box also runs the `caches` tier on its own, but only when it matters:
+# once the home passes AGENTBOX_CLEAN_AT, or the disk under it has less than
+# AGENTBOX_CLEAN_MIN_FREE left. A healthy box keeps its warm caches; a full
+# one gets the tier that breaks nothing, and the login greeting says so. The
+# other tiers are never automatic.
+#
+#   agentbox-clean watch          the loop the entrypoint runs: measure hourly,
+#                                 clean caches when over the line
+#   agentbox-clean measure        the two figures the greeting reads
+#
+# AGENTBOX_CLEAN_AT        home size that triggers an automatic caches pass
+#                          (default 20G; 0 never)
+# AGENTBOX_CLEAN_MIN_FREE  free space on the home's disk below which the pass
+#                          runs regardless of size (default 2G; 0 never)
+# AGENTBOX_CLEAN_CHECK     seconds between measurements (default 3600)
+# AGENTBOX_CLEAN_INTERVAL  seconds between unconditional caches passes, for an
+#                          operator who wants a timer too (default 0: none)
 set -uo pipefail
 
 USER_NAME="${AGENTBOX_USER:-dev}"
@@ -316,16 +331,81 @@ report() {
     printf '%s%s%s\n' "$c_dim" "a verb reclaims: agentbox-clean caches | browsers | docker | all   (--dry-run first, if you like)" "$c_off"
 }
 
-# The reclaimable figure the greeting reads, refreshed by the persist watcher
-# rather than by a du at every login. Two numbers in KB: home, rebuildable.
+# The figures the greeting reads, refreshed by `watch` rather than by a du at
+# every login. Three numbers in KB: home, rebuildable, free on the home's disk.
 cmd_measure() {
-    local line t path label method sum=0 size
+    local line t path label method sum=0 size free
     for line in "${CACHES[@]}"; do
         IFS='|' read -r t path label method <<< "$line"
         size="$(measure "$path" "$method")"
         sum=$((sum + size))
     done
-    printf '%s %s\n' "$(kb "$HOME_DIR")" "$sum"
+    free="$(df -Pk "$HOME_DIR" 2>/dev/null | awk 'NR==2 {print $4}')"
+    printf '%s %s %s\n' "$(kb "$HOME_DIR")" "$sum" "${free:-0}"
+}
+
+# A size like 20G / 512M / 0 in KB. Empty on garbage.
+to_kb() {
+    local v="${1^^}" n unit
+    n="${v%[KMGT]}"; unit="${v#"$n"}"
+    [[ "$n" =~ ^[0-9]+$ ]] || return 1
+    case "$unit" in
+        K|"") echo "$n" ;;
+        M)    echo $((n * 1024)) ;;
+        G)    echo $((n * 1024 * 1024)) ;;
+        T)    echo $((n * 1024 * 1024 * 1024)) ;;
+        *)    return 1 ;;
+    esac
+}
+
+# The loop the entrypoint runs. Every AGENTBOX_CLEAN_CHECK seconds: measure,
+# write the figures for the greeting, and if the home is over AGENTBOX_CLEAN_AT
+# or the disk under it has less than AGENTBOX_CLEAN_MIN_FREE, run the caches
+# tier and measure again. AGENTBOX_CLEAN_INTERVAL adds an unconditional pass
+# on its own clock. Everything it does lands in the state volume's log.
+cmd_watch() {
+    local check="${AGENTBOX_CLEAN_CHECK:-3600}" interval="${AGENTBOX_CLEAN_INTERVAL:-0}"
+    local at_kb free_kb log="$STATE_ROOT/log/clean.log" disk="$STATE_ROOT/.disk"
+    at_kb="$(to_kb "${AGENTBOX_CLEAN_AT:-20G}")" || { warn "AGENTBOX_CLEAN_AT='${AGENTBOX_CLEAN_AT}' is not a size — using 20G"; at_kb=$((20 * 1048576)); }
+    free_kb="$(to_kb "${AGENTBOX_CLEAN_MIN_FREE:-2G}")" || { warn "AGENTBOX_CLEAN_MIN_FREE='${AGENTBOX_CLEAN_MIN_FREE}' is not a size — using 2G"; free_kb=$((2 * 1048576)); }
+    [ "$check" -gt 0 ] 2>/dev/null || check=3600
+    mkdir -p "$STATE_ROOT/log" 2>/dev/null || true
+
+    # Housekeeping at the lowest priority: a du of a big home should never
+    # be felt by anything else.
+    renice -n 19 -p $$ >/dev/null 2>&1 || true
+
+    local since_interval=0 home cache free why
+    while true; do
+        read -r home cache free < <(cmd_measure 2>/dev/null) || { home=0; cache=0; free=0; }
+        printf '%s %s %s\n' "${home:-0}" "${cache:-0}" "${free:-0}" > "$disk.tmp" 2>/dev/null \
+            && mv "$disk.tmp" "$disk" && chmod 0644 "$disk"
+
+        why=""
+        if [ "$at_kb" -gt 0 ] && [ "${home:-0}" -gt "$at_kb" ]; then
+            why="home is $(human_kb "$home"), over $(human_kb "$at_kb")"
+        elif [ "$free_kb" -gt 0 ] && [ "${free:-0}" -gt 0 ] && [ "$free" -lt "$free_kb" ]; then
+            why="only $(human_kb "$free") free on the home's disk"
+        elif [ "$interval" -gt 0 ] 2>/dev/null && [ "$since_interval" -ge "$interval" ]; then
+            why="AGENTBOX_CLEAN_INTERVAL=${interval}s elapsed"
+        fi
+
+        if [ -n "$why" ] && [ "${cache:-0}" -gt 0 ]; then
+            {
+                echo "=== $(date -Is) cleaning caches: $why"
+                run_tier caches
+                [ -s "$FREED_FILE" ] && printf 'freed %s\n' "$(human_kb "$(awk '{s+=$1} END {print s+0}' "$FREED_FILE")")"
+                : > "$FREED_FILE"
+            } >> "$log" 2>&1
+            since_interval=0
+            read -r home cache free < <(cmd_measure 2>/dev/null) || true
+            printf '%s %s %s\n' "${home:-0}" "${cache:-0}" "${free:-0}" > "$disk.tmp" 2>/dev/null \
+                && mv "$disk.tmp" "$disk" && chmod 0644 "$disk"
+        fi
+
+        sleep "$check"
+        since_interval=$((since_interval + check))
+    done
 }
 
 usage() {
@@ -338,6 +418,10 @@ agentbox-clean — what is on the disk, and what of it is only cache
   docker               unreferenced images and stopped containers in the box
   all                  the three above
   --dry-run <verb>     what a verb would remove
+
+The box runs `caches` on its own once the home passes AGENTBOX_CLEAN_AT
+(20G) or the disk under it has less than AGENTBOX_CLEAN_MIN_FREE (2G) left.
+Nothing else is ever automatic.
 USAGE
 }
 
@@ -353,6 +437,7 @@ main() {
         docker)   run_docker_tier ;;
         all)      run_tier caches; run_tier browsers; run_docker_tier ;;
         measure)  cmd_measure; return 0 ;;
+        watch)    cmd_watch; return 0 ;;
         -h|--help|help) usage; return 0 ;;
         *) warn "unknown verb: $1"; usage; return 2 ;;
     esac

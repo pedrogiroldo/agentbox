@@ -120,23 +120,35 @@ in_box "printf '%s %s\n' $((5 * 1048576)) $((3 * 1048576)) > /var/lib/agentbox/.
 greet="$(docker exec -u dev "$NAME" bash -lic 'true' 2>&1 || true)"
 printf '%s' "$greet" | grep -q 'agentbox-clean' && pass "more than half cache also earns the line" || fail "half-cache home got no line: $greet"
 
-step "5. nothing on a timer unless asked"
-boot || { echo "the box did not boot"; exit 1; }
+step "5. the box cleans caches on its own only past the line"
+# A fast measurement period so this does not take an hour; the seeded home is
+# a few megabytes, far below the shipped 20G line.
+boot -e AGENTBOX_CLEAN_CHECK=3 || { echo "the box did not boot"; exit 1; }
 seed
 sleep 12
-as_dev 'test -e ~/.npm/_npx/old' && pass "with no interval, nothing was cleaned" || fail "something cleaned the home on its own"
-in_box 'test ! -e /var/lib/agentbox/log/clean.log' && pass "and no clean log exists" || fail "a clean log appeared without an interval"
+as_dev 'test -e ~/.npm/_npx/old' && pass "under the line, nothing was cleaned" || fail "something cleaned a home that had room"
+in_box 'test ! -e /var/lib/agentbox/log/clean.log' && pass "and no clean log exists" || fail "a clean log appeared under the line"
+in_box 'test -s /var/lib/agentbox/.disk' && pass "but the figures for the greeting were written" || fail "the watcher wrote no figures"
 
-boot -e AGENTBOX_CLEAN_INTERVAL=5 || { echo "the box did not boot with an interval"; exit 1; }
+# Over the line: a home of a few megabytes against a 1M threshold.
+boot -e AGENTBOX_CLEAN_CHECK=3 -e AGENTBOX_CLEAN_AT=1M || { echo "the box did not boot over the line"; exit 1; }
 seed
-for _ in $(seq 30); do
+for _ in $(seq 40); do
     in_box 'test -e /var/lib/agentbox/log/clean.log' 2>/dev/null && break
     sleep 1
 done
 sleep 3
-in_box 'test -e /var/lib/agentbox/log/clean.log' && pass "with an interval, the caches tier ran and logged" || fail "no clean log after the interval"
-as_dev 'test ! -e ~/.npm/_npx/old' && pass "and it cleaned the caches" || fail "the timer did not clean"
-as_dev 'test -e ~/projects/repo/data' && pass "and only the caches" || fail "the timer touched a project"
+in_box 'test -e /var/lib/agentbox/log/clean.log' && pass "over the line, the caches tier ran and logged" || fail "no clean log over the line"
+in_box 'grep -q "over 1 MB" /var/lib/agentbox/log/clean.log' && pass "and the log says why" || fail "the log does not name the trigger: $(in_box 'head -3 /var/lib/agentbox/log/clean.log')"
+as_dev 'test ! -e ~/.npm/_npx/old' && pass "and it cleaned the caches" || fail "the watcher did not clean"
+as_dev 'test -e ~/projects/repo/data' && pass "and only the caches" || fail "the watcher touched a project"
+as_dev 'test -e ~/.cache/ms-playwright/chromium/bin' && pass "and never the browsers" || fail "the watcher removed the browsers"
+
+# Turned off: the same full home, no triggers.
+boot -e AGENTBOX_CLEAN_CHECK=3 -e AGENTBOX_CLEAN_AT=0 -e AGENTBOX_CLEAN_MIN_FREE=0 || { echo "the box did not boot with cleaning off"; exit 1; }
+seed
+sleep 12
+as_dev 'test -e ~/.npm/_npx/old' && pass "with both triggers at 0, nothing is cleaned" || fail "cleaning ran with the triggers off"
 
 echo
 if [ "$failures" -eq 0 ]; then

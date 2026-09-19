@@ -108,10 +108,13 @@ says so, and a VPS has no `make clean` to reach for.
   verbs, because each breaks something until it is reinstalled or re-pulled.
   `agentbox-clean all` is the three together.
 - **`make clean`** from the laptop runs the same report and verbs.
-- **Nothing is deleted automatically.** When the home crosses a threshold,
-  the motd gains one line naming the reclaimable amount and the command.
-  `AGENTBOX_CLEAN_INTERVAL` exists for an operator who wants the `caches`
-  tier on a timer, and defaults to off.
+- **The `caches` tier runs on its own once the disk is tight, and only
+  then.** Past `AGENTBOX_CLEAN_AT` (20G) or under `AGENTBOX_CLEAN_MIN_FREE`
+  (2G) the box runs it and logs the result; below both lines warm caches
+  stay. The other tiers are never automatic. The motd gains one line naming
+  the home's size, the rebuildable share and the command. Nothing needs an
+  environment variable to be on; `AGENTBOX_CLEAN_INTERVAL` adds a plain timer
+  for an operator who wants one.
 
 ## Capabilities
 
@@ -162,7 +165,7 @@ says so, and a VPS has no `make clean` to reach for.
   `docker exec` cannot land in a root that has controllers enabled (the
   design's first spike).
 - `docker-compose.yml`, `deploy/docker-compose.ghcr.yml`, `.env.example`:
-  `AGENTBOX_ISOLATION`, `AGENTBOX_CONTROL_RESERVE`, `AGENTBOX_CLEAN_INTERVAL`.
+  `AGENTBOX_ISOLATION`, `AGENTBOX_CONTROL_RESERVE`, `AGENTBOX_CLEAN_AT`, `AGENTBOX_CLEAN_MIN_FREE`, `AGENTBOX_CLEAN_INTERVAL`.
 - `docs/deploy.md`, `docs/security.md`, `docs/persistence.md`,
   `docs/collie.md`, new `docs/small-vps.md`: what is protected, what is not,
   the measured cost per agent session, why the host needs swap, what

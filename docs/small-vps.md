@@ -127,7 +127,8 @@ yours — never touched by this command
   agent memory                                     248 MB
 ```
 
-The report deletes nothing. A verb does:
+The report deletes nothing. A verb does, and so does the box itself for the
+first tier once the disk is actually tight (below):
 
 ```sh
 agentbox-clean caches        # each tool's own prune; nothing breaks
@@ -144,10 +145,14 @@ and short: repositories, worktrees, transcripts, agent state, credentials,
 and the apt archive in the state volume (it is the offline replay cache).
 Nothing outside the two lists is touched, however large.
 
-Nothing runs on its own. When the home crosses `AGENTBOX_CLEAN_WARN`
-(default `20G`), or more than half of it is cache, the login greeting says so
-in one line. `AGENTBOX_CLEAN_INTERVAL=<seconds>` runs the `caches` tier on a
-timer for operators who want that; it defaults to off.
+**The `caches` tier runs on its own when it matters.** Once the home passes
+`AGENTBOX_CLEAN_AT` (default `20G`), or the disk under it has less than
+`AGENTBOX_CLEAN_MIN_FREE` (default `2G`) left, the box runs `agentbox-clean
+caches` itself, logs what it freed to `/var/lib/agentbox/log/clean.log`, and
+the login greeting says where the home stands. Below both lines it does
+nothing, so a box with room keeps its warm caches. The other tiers are never
+automatic. Set a trigger to `0` to turn it off; `AGENTBOX_CLEAN_INTERVAL`
+adds a plain timer for operators who want one.
 
 ## What the host has to do
 

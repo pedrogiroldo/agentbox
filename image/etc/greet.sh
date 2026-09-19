@@ -40,14 +40,17 @@ fi
 unset _agentbox_cols _agentbox_lines
 
 # One line about the disk, only when it is worth one. The figures come from a
-# file the persist watcher refreshes (a du of the home at every login would be
-# the opposite of what a small box needs), so they can be a while stale; the
-# command they name measures live. Above AGENTBOX_CLEAN_WARN, or when more
-# than half of the home is cache, say so. Otherwise say nothing.
+# file `agentbox-clean watch` refreshes hourly (a du of the home at every
+# login would be the opposite of what a small box needs), so they can be a
+# while stale; the command they name measures live. Above AGENTBOX_CLEAN_AT
+# -- the same line past which the box cleans caches on its own, so what is
+# reported here is mostly what only you can decide about -- or when more than
+# half of the home is cache, say so. Otherwise say nothing.
 _agentbox_disk="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}/.disk"
 if [ -r "$_agentbox_disk" ]; then
-    read -r _agentbox_home _agentbox_cache < "$_agentbox_disk" 2>/dev/null
-    _agentbox_warn="${AGENTBOX_CLEAN_WARN:-20G}"
+    read -r _agentbox_home _agentbox_cache _agentbox_free < "$_agentbox_disk" 2>/dev/null
+    unset _agentbox_free
+    _agentbox_warn="${AGENTBOX_CLEAN_AT:-20G}"
     case "$_agentbox_warn" in
         *G|*g) _agentbox_warn=$(( ${_agentbox_warn%[Gg]} * 1048576 )) ;;
         *M|*m) _agentbox_warn=$(( ${_agentbox_warn%[Mm]} * 1024 )) ;;

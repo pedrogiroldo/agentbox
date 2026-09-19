@@ -349,29 +349,40 @@ the home's total; the tiers grow by adding entries, not by heuristics.
 `make clean` on the laptop is `docker exec` into the same command, so the
 VPS operator and the local one see one report.
 
-*Alternatives considered.* A size-threshold auto-clean at boot: silently
-deleting a cache the operator is mid-build on, on the one machine they
-cannot watch, is the wrong default for a box whose other verbs all say
-before they do. A cron inside the box: same objection; offered as
-`AGENTBOX_CLEAN_INTERVAL`, default off, `caches` tier only, log in the
-state volume. `docker system prune` for the box's daemon by default: those
-are the operator's images, and a `-a` would delete the ones their compose
-files are about to use.
+**Automatic, but only past the line.** The operator's ask is that nothing
+here needs an environment variable to be on. A timer that wipes warm caches
+on a healthy box would make every build slower for nothing, so the default
+is a threshold, not a clock: `agentbox-clean watch`, started by the
+entrypoint in `work`, measures the home hourly and runs the `caches` tier
+when the home is over `AGENTBOX_CLEAN_AT` (20G) or the disk under it has
+less than `AGENTBOX_CLEAN_MIN_FREE` (2G) left. It logs to the state volume
+and measures again. Only `caches` is ever unattended: it is the tier that
+breaks nothing. `0` on a trigger turns it off; `AGENTBOX_CLEAN_INTERVAL`
+adds a plain timer for an operator who wants one.
 
-### D10. The motd says when it is time
+*Alternatives considered.* A cron-style interval as the default: deletes a
+cache the operator is mid-build on, on a box with plenty of room, for no
+gain. Cleaning at boot only: a box that is never rebooted never gets
+cleaned. `docker system prune` for the box's daemon by default: those are
+the operator's images, and a `-a` would delete the ones their compose files
+are about to use.
+
+### D10. The motd says where the disk stands
 
 `greet.sh` already decides whether the terminal is wide enough for the
-summary. It gains one conditional line, computed from a cached figure the
-persist watcher refreshes on its five-minute pass rather than by a `du` at
-every login: when the home exceeds `AGENTBOX_CLEAN_WARN` (default `20G`)
-or the rebuildable share exceeds half of it, the line reads
+summary. It gains one conditional line, read from the figures the watcher
+writes rather than from a `du` at every login: when the home exceeds
+`AGENTBOX_CLEAN_AT` (default `20G`) or the rebuildable share exceeds half of
+it, the line reads
 
 ```
   home 14 GB, 9 GB of it rebuildable — agentbox-clean shows what
 ```
 
-and nothing otherwise. The threshold is a knob because a 40 GB VPS and a
-400 GB one have different ideas of "full".
+and nothing otherwise. Past the same line the watcher has already run the
+`caches` tier, so what the greeting reports there is mostly what only the
+operator can decide about. The threshold is a knob because a 40 GB VPS and
+a 400 GB one have different ideas of "full".
 
 ## Risks / Trade-offs
 
