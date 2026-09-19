@@ -231,10 +231,19 @@ pass "booted"
 # Unprivileged, Docker grants neither a writable cgroup tree nor CAP_SYS_NICE,
 # so the honest answer is "nothing", and the box must say that rather than
 # claim priorities it could not set.
-if docker logs "$NAME" 2>&1 | grep -qE 'falling back to (process priorities|nothing)'; then
+# The warning goes to stderr and "sshd is listening" to stdout; the log driver
+# copies the two streams independently, so the earlier line can land after
+# the later one. Wait for it rather than reading the log the instant boot
+# returns.
+said=false
+for _ in $(seq 20); do
+    if docker logs "$NAME" 2>&1 | grep -qE 'falling back to (process priorities|nothing)'; then said=true; break; fi
+    sleep 1
+done
+if $said; then
     pass "the boot log names the fallback"
 else
-    fail "no fallback warning in the log: $(docker logs "$NAME" 2>&1 | grep -i isolation)"
+    fail "no fallback warning in the log: $(docker logs "$NAME" 2>&1 | grep -iE 'isolation|cgroup')"
 fi
 st="$(in_box 'agentbox-cgroup status' 2>&1 || true)"
 printf '%s' "$st" | grep -q 'cgroups refused' \
