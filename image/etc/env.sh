@@ -37,8 +37,10 @@ fi
 # the group the box weights ahead of its workload so that logins are fast even
 # when the agents have saturated the machine. The login is done by now, and
 # whatever this shell runs next (a build, a test suite, `herdr` itself) is
-# workload. Move it, once, and only for the user: root shells are the rescue
-# path and stay where they are. Panes arrive already moved, so this is a
+# workload. /etc/ssh/sshrc normally does this move before the shell starts;
+# this is the belt to that suspender, for a shell that got here another way.
+# Only for the user: root shells are the rescue path and stay where they are.
+# Panes and sshrc-moved shells are already in the right place, so this is a
 # no-op for them -- no sudo per pane.
 if [ "$(id -u)" != "0" ] && [ -r /run/agentbox-isolation ] && [ -x /usr/local/bin/agentbox-cgroup ]; then
     _agentbox_mode="$(cat /run/agentbox-isolation 2>/dev/null)"

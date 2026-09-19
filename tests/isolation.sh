@@ -158,9 +158,12 @@ if $privileged; then
         /usr/local/bin/agentbox-pane-shell -c 'setsid nohup bash -c "sed s/^0::// /proc/self/cgroup" 2>/dev/null' 2>/dev/null || true)"
     [ "$detached" = "/work" ] && pass "setsid+nohup does not escape work/" || fail "a detached process landed in '$detached'"
 
-    # An SSH shell: the login runs in control/, the shell moves to work/.
+    # An SSH session: the login runs in control/, what it starts is work/ --
+    # a one-shot command (sshrc moves it) and a login shell (env.sh would too).
     ssh_cg="$(over_ssh 'sed s/^0::// /proc/self/cgroup' 2>/dev/null || true)"
-    [ "$ssh_cg" = "/work" ] && pass "an SSH session's shell moves to work/" || fail "an SSH shell is in '${ssh_cg:-nothing}'"
+    [ "$ssh_cg" = "/work" ] && pass "a non-interactive SSH command runs in work/" || fail "an SSH command is in '${ssh_cg:-nothing}'"
+    ssh_cg="$(over_ssh 'bash -lc "sed s/^0::// /proc/self/cgroup"' 2>/dev/null || true)"
+    [ "$ssh_cg" = "/work" ] && pass "an SSH login shell runs in work/" || fail "an SSH login shell is in '${ssh_cg:-nothing}'"
     root_cg="$(in_box 'sed s/^0::// /proc/self/cgroup')"
     [ "$root_cg" = "/control" ] && pass "a root shell stays in control/" || fail "a root shell is in '$root_cg'"
 

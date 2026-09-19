@@ -234,11 +234,14 @@ grants. One `sudo` per pane open is noise next to what a pane does next. When
 `sudo` is unavailable or the enter fails, the wrapper still `exec`s the shell:
 a pane that opens in the wrong group beats a pane that does not open.
 
-Interactive SSH shells take the same route, from `env.sh`, for the box user
-only: the login's fork chain runs in `control` and is fast, and the shell moves
-to `work` as its first act, so a build started over SSH is workload, not
-control plane. Root shells (`make root`, `docker exec`) are left where they
-are.
+SSH sessions take the same route, from `/etc/ssh/sshrc`, which sshd runs for
+every session — interactive login, one-shot command, scp, a mutagen agent —
+after authentication and before the shell or command starts: the login's fork
+chain runs in `control` and is fast, and what it starts is moved to `work`
+before it begins, so a build started over SSH is workload, not control
+plane. `env.sh` repeats the move for an interactive shell that got there some
+other way. Both act for the box user only; root shells (`make root`,
+`docker exec`) are left where they are.
 
 *Alternatives considered.* A herdr-side hook or per-pane command prefix: herdr
 has no such option today, and depending on one couples the box to a herdr

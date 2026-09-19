@@ -155,7 +155,7 @@ says so, and a VPS has no `make clean` to reach for.
 - `image/etc/persist.sh`: prunes Collie releases before a save; excludes
   superseded ones from the overlay scan; moves its watcher into `work`.
 - `image/etc/collie.sh`: a `prune` verb the entrypoint and persist call.
-- `image/etc/env.sh`: moves the box user's interactive SSH shell into `work`
+- `image/etc/sshrc` (new) and `image/etc/env.sh`: move an SSH session into `work`
   once the login is complete.
 - `image/etc/make-motd.sh`, `image/etc/greet.sh`: the disk line.
 - `Makefile`: `make clean`; `make shell` may need to enter `work` itself if

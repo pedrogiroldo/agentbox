@@ -241,6 +241,7 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 COPY image/etc/env.sh /etc/agentbox/env.sh
 COPY image/etc/sshd_config /etc/ssh/sshd_config
+COPY image/etc/sshrc /etc/ssh/sshrc
 COPY image/etc/make-motd.sh /usr/local/bin/agentbox-make-motd
 COPY image/etc/banner.sh /usr/local/bin/agentbox-banner
 COPY image/etc/greet.sh /etc/agentbox/greet.sh
