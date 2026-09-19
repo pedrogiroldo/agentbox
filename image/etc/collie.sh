@@ -23,7 +23,8 @@
 # re-opening DNS rebinding.
 #
 #   ensure  the boot path: start it if the box is configured to run it
-#   start   preflight herdr, then hand off to `collie start`
+#   start   preflight herdr, hand off to `collie start`, then put the bridge
+#           in the control-plane cgroup if it came up outside it
 #   stop    hand off to `collie stop`
 #   status  what the box is doing about Collie, if anything
 #   prune   remove the releases an in-place update left behind (keeps the
@@ -170,6 +171,20 @@ start() {
 
     if ! running; then
         give_up "collie did not come up in ${START_TIMEOUT}s — run 'collie status' for its own account of why"
+    fi
+
+    # Collie is control plane, and a bridge only inherits that from the process
+    # that started it. From the entrypoint this is already true and the call is
+    # a no-op; from a pane or an SSH shell the bridge just came up as workload
+    # -- weighted behind the agents it exists to let you watch, and ahead of
+    # them in the queue to be killed. Placing another process needs root, and
+    # the box already grants the user passwordless sudo for exactly this move;
+    # agentbox-pane-shell does the mirror image of it. Quiet either way: a
+    # Collie that is up but badly placed beats one that refused to start.
+    if [ "$(id -u)" = 0 ]; then
+        agentbox-cgroup protect >/dev/null 2>&1 || true
+    else
+        sudo -n agentbox-cgroup protect >/dev/null 2>&1 || true
     fi
 
     log "collie is up — $(tailnet_url)"

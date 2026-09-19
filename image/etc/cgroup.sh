@@ -32,7 +32,8 @@
 #                    service inherits control/. Never fatal in `auto`.
 #   enter <group>    move a pid (default: the caller's parent, since this runs
 #     [pid]          as a child of the shell that wants to move) into a group
-#   protect          set the OOM scores of the control-plane services
+#   protect          put the control-plane services back in control/ and set
+#                    their OOM scores
 #   status           which protections are actually in effect, not which
 #                    were asked for
 #
@@ -167,23 +168,46 @@ drain_root() {
 }
 
 # ---------------------------------------------------------------------------
-# protect: the OOM ordering. Independent of cgroups, applied in every mode,
-# idempotent, and called by the entrypoint after the control-plane services
-# have started (twice: the herdr server comes up before sshd, the tailnet and
-# Collie in the background chain after it).
+# protect: both halves of being control plane -- the group the box weights
+# ahead of the workload, and the OOM score that says which process the kernel
+# should take last. Applied in every mode, idempotent, and called by the
+# entrypoint after the control-plane services have started (twice: the herdr
+# server comes up before sshd, the tailnet and Collie in the background chain
+# after it).
+#
+# The group half is here because placement is by inheritance, and inheritance
+# only covers the services the entrypoint itself started. One restarted later
+# lands wherever its starter was, and a pane is work/ -- so a Collie restarted
+# from a pane, or by its own updater after an update from the phone, comes
+# back weighted *behind* the agents it exists to let you watch, with the OOM
+# score of any other workload. Re-asserting is the repair, which is why this
+# does not ask whether anything moved: it puts them back either way.
 #
 # Killing the herdr server kills every pane at once; killing one agent loses
-# one conversation. This says which the kernel should prefer. sshd sets its
-# own -1000; nothing in work/ is touched.
+# one conversation. That is the OOM ordering. sshd sets its own -1000 and the
+# entrypoint starts it in control/, so nothing here touches it; nothing in
+# work/ is touched either.
 # ---------------------------------------------------------------------------
+
+# The services the box places and scores: a label, the pgrep arguments that
+# find them, and the oom_score_adj it sets. `status` reports from this same
+# table, so what is asserted and what is reported cannot drift apart.
+control_plane() {
+    cat <<'EOF'
+herdr server|-f|herdr server|-1000
+collie|-f|collie _exec-bridge|-900
+tailscaled|-x|tailscaled|-900
+EOF
+}
+
 protect() {
-    local pid
-    for pid in $(pgrep -f 'herdr server' 2>/dev/null); do
-        echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
-    done
-    for pid in $(pgrep -f 'collie _exec-bridge' 2>/dev/null) $(pgrep -x tailscaled 2>/dev/null); do
-        echo -900 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
-    done
+    local label flag pat score pid
+    while IFS='|' read -r label flag pat score; do
+        for pid in $(pgrep "$flag" "$pat" 2>/dev/null); do
+            echo "$score" > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+            enter control "$pid" >/dev/null 2>&1 || true
+        done
+    done < <(control_plane)
     return 0
 }
 
@@ -398,13 +422,29 @@ status() {
             return 1 ;;
     esac
 
-    # The OOM ordering is the entrypoint's job and applies in every mode.
-    local hp; hp="$(pgrep -f 'herdr server' 2>/dev/null | head -1)"
-    if [ -n "$hp" ]; then
-        echo "  oom:    herdr server $(cat "/proc/$hp/oom_score_adj" 2>/dev/null || echo '?'), sshd $(cat "/proc/$(pgrep -x sshd | head -1)/oom_score_adj" 2>/dev/null || echo '?') (lower is killed last)"
-    else
-        echo "  oom:    sshd $(cat "/proc/$(pgrep -x sshd | head -1)/oom_score_adj" 2>/dev/null || echo '?') (no herdr server running)"
-    fi
+    # Where the control-plane services actually are, which is the whole point
+    # of this command: the entrypoint's own children are in control/, and one
+    # restarted from a pane came back as workload. A protection that was asked
+    # for and one that is in effect look identical until this says otherwise.
+    local label flag pat want pid at now note head="plane:"
+    while IFS='|' read -r label flag pat want; do
+        pid="$(pgrep "$flag" "$pat" 2>/dev/null | head -1)"
+        if [ -z "$pid" ]; then
+            printf '  %-7s %-13s not running\n' "$head" "$label"
+        else
+            at="$(sed 's|^0::||' "/proc/$pid/cgroup" 2>/dev/null)"
+            now="$(cat "/proc/$pid/oom_score_adj" 2>/dev/null || echo '?')"
+            note=""
+            if [ "$mode" = cgroup ] && [ "$at" != "/control" ]; then
+                note="  <- workload: restarted outside the box's own start — \`agentbox-cgroup protect\` puts it back"
+            elif [ "$now" != "$want" ]; then
+                note="  <- expected oom $want — \`agentbox-cgroup protect\` sets it"
+            fi
+            printf '  %-7s %-13s %s oom %s%s\n' "$head" "$label" "${at:-/}" "$now" "$note"
+        fi
+        head=""
+    done < <(control_plane)
+    echo "  oom:    sshd $(cat "/proc/$(pgrep -x sshd | head -1)/oom_score_adj" 2>/dev/null || echo '?') — it sets its own, and lower is killed last"
     return 0
 }
 

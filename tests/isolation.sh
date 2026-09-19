@@ -8,8 +8,10 @@
 #
 #   1. privileged, the tree comes up: sshd and the herdr server are control,
 #      the workload group has its weight and limits, the OOM ordering is set,
-#      and `docker exec` -- the rescue hatch -- still works once the root has
-#      controllers enabled (the one thing the design could not prove on paper)
+#      a control-plane service restarted as workload is put back by `protect`
+#      and named by `status` until it is, and `docker exec` -- the rescue
+#      hatch -- still works once the root has controllers enabled (the one
+#      thing the design could not prove on paper)
 #   2. a pane's shell is the user's shell and lands in the workload group; so
 #      does an SSH shell, once the login is done
 #   3. with the workload group saturated, a real SSH login and a herdr status
@@ -129,6 +131,46 @@ if $privileged; then
     in_box 'grep -q cpu /sys/fs/cgroup/cgroup.subtree_control' \
         && pass "the root delegates cpu to its children" \
         || fail "cgroup.subtree_control has no cpu: $(in_box 'cat /sys/fs/cgroup/cgroup.subtree_control')"
+
+    # Placement is by inheritance, so it holds only for what the entrypoint
+    # started. Collie is the one that gets restarted -- from a pane, or by its
+    # own updater after an update from the phone -- and a pane is work/, which
+    # puts the thing you watch the herd with behind the herd. No real Collie
+    # here (it needs a tailnet), so a stand-in wearing the bridge's command
+    # line stands for it. The pattern is bracketed wherever it is passed on a
+    # command line, so the shell carrying it does not match itself.
+    docker exec -d -u dev -e AGENTBOX_PANE_SHELL=/bin/bash "$NAME" \
+        /usr/local/bin/agentbox-pane-shell -c 'exec -a "collie _exec-bridge" sleep 120' \
+        >/dev/null 2>&1
+    sleep 1
+    bridge_pid="$(in_box 'pgrep -f "collie _exec-bridg[e]" | head -1' 2>/dev/null || true)"
+    if [ -z "$bridge_pid" ]; then
+        fail "could not start a stand-in for the collie bridge"
+    else
+        [ "$(cgroup_of "$bridge_pid")" = "/work" ] \
+            && pass "a bridge started from a pane lands in work/ — the drift protect exists for" \
+            || fail "the stand-in did not start in work/: '$(cgroup_of "$bridge_pid")'"
+
+        st="$(in_box 'agentbox-cgroup status' 2>&1 || true)"
+        printf '%s' "$st" | grep -q 'collie.*work.*restarted outside' \
+            && pass "status says so instead of reporting a protection it does not have" \
+            || fail "status does not name the drift: $st"
+
+        in_box 'agentbox-cgroup protect' >/dev/null 2>&1 || true
+        [ "$(cgroup_of "$bridge_pid")" = "/control" ] \
+            && pass "agentbox-cgroup protect puts the bridge back in control/" \
+            || fail "protect left the bridge in '$(cgroup_of "$bridge_pid")'"
+        [ "$(in_box "cat /proc/$bridge_pid/oom_score_adj")" = "-900" ] \
+            && pass "and gives it oom_score_adj -900" \
+            || fail "the bridge's oom_score_adj is $(in_box "cat /proc/$bridge_pid/oom_score_adj")"
+
+        st="$(in_box 'agentbox-cgroup status' 2>&1 || true)"
+        printf '%s' "$st" | grep -q 'collie.*control.*oom -900' \
+            && pass "and status agrees once it is back" \
+            || fail "status still does not report the bridge in control/: $st"
+
+        in_box "kill $bridge_pid" >/dev/null 2>&1 || true
+    fi
 
     # -----------------------------------------------------------------------
     step "2. panes and shells are workload; the shell is still the user's"
