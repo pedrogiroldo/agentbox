@@ -5,11 +5,25 @@
 # that a login is fast even when the agents have saturated the machine. The
 # session it is about to start is not. An interactive login moves itself in
 # env.sh; a one-shot command (`ssh box make test`, a mutagen agent, scp, mosh)
-# never reads env.sh, so it is moved here instead. $PPID is the process that
-# will exec the shell or command; cgroup membership survives the exec.
+# never reads env.sh, so it is moved here instead.
+#
+# Which process to move: the session child, which runs this file and then
+# execs the shell or command in place. sshd runs this through popen, so there
+# is at least one `sh -c` between here and that child, and $PPID is not it.
+# Walk up until the nearest ancestor that is sshd itself: that is the one.
+# cgroup membership survives the exec.
 #
 # Root stays where it is: `make root` and friends are the rescue path.
 if [ "$(id -u)" != 0 ] && [ -r /run/agentbox-isolation ] && [ -x /usr/local/bin/agentbox-cgroup ]; then
-    sudo -n /usr/local/bin/agentbox-cgroup enter work "$PPID" >/dev/null 2>&1
+    pid=$$
+    target=""
+    while [ "$pid" -gt 1 ]; do
+        pid="$(cut -d' ' -f4 "/proc/$pid/stat" 2>/dev/null)" || break
+        [ -n "$pid" ] || break
+        case "$(cat "/proc/$pid/comm" 2>/dev/null)" in
+            sshd|sshd-session) target="$pid"; break ;;
+        esac
+    done
+    [ -n "$target" ] && sudo -n /usr/local/bin/agentbox-cgroup enter work "$target" >/dev/null 2>&1
 fi
 true
