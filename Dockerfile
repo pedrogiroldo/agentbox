@@ -202,7 +202,19 @@ RUN set -eux; \
     # `collie link` at the end of the installer publishes into /root/.local/bin,
     # which is on nobody's PATH. The symlink above is the one that counts.
     rm -rf /root/.local/share/collie /root/.local/bin; \
-    collie version
+    # What this image shipped, written down so the box can tell an
+    # image-supplied release from one staged inside a running container. The
+    # prune adopts the first and leaves the second alone, and it has no other
+    # way to tell them apart (see image/etc/collie.sh). The build suffix is
+    # dropped, because the directory under versions/ is the bare version and
+    # that is what the record has to match. /usr/share/agentbox is created
+    # here rather than waited for: the persistence contract's own layer is
+    # further down, and install -d is idempotent.
+    installed="$(collie version)"; \
+    echo "${installed}"; \
+    install -d -m 0755 /usr/share/agentbox; \
+    printf '%s\n' "${installed%%+*}" > /usr/share/agentbox/collie-version; \
+    test "$(cat /usr/share/agentbox/collie-version)" = "$(basename "$(readlink -f /opt/collie/current)")"
 
 # ---------------------------------------------------------------------------
 # Coding agents
@@ -293,6 +305,13 @@ RUN if [ "$PREINSTALL_NVIM_PLUGINS" = "true" ]; then \
 #                 of it is yours, and agentbox-persist reinstalls it on boot.
 #   build-stamp   the moment the image was sealed. Every file newer than this
 #                 was put there by you, and gets copied into the state volume.
+#
+# A third record is written further up, in the Collie layer, because it
+# describes that layer: /usr/share/agentbox/collie-version, the Collie release
+# this image installed. It is load-bearing — agentbox-collie prune reads it to
+# tell an image-shipped release from one staged inside a running box, and
+# adopts the former — so an installer change that moves or renames it has to
+# move the reader with it.
 #
 # The apt drop-ins move the .deb cache and the package lists into that volume,
 # so replaying your packages after a recreate is usually offline and instant.

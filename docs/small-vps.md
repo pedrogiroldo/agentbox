@@ -110,7 +110,11 @@ them back down on every boot.
 
 The box now keeps the current release and the one before it, removes the
 rest at boot and before each periodic save, and drops the removed ones from
-the state volume too. An in-place update still survives a recreate.
+the state volume too. The same pass clears `/opt/collie/.staging`, where a
+failed update leaves its partial download — 123 MB on the box this was last
+measured on, which the state volume was also keeping. An in-place update
+still survives a recreate, up to the point where the image ships something
+newer and the box adopts that instead ([collie.md](collie.md)).
 
 ### It tells you what is cache
 

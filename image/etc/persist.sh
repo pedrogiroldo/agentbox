@@ -24,8 +24,16 @@ PKG_LIST="$APT_DIR/packages"
 LOG_DIR="$STATE_ROOT/log"
 LOCK="$STATE_ROOT/.lock"
 
+# Where the Collie release trees live. The same knob agentbox-collie reads, so
+# the two never disagree about where the tree is -- including the copy of it
+# under the overlay, which is mirrored at the tree's own absolute path.
+COLLIE_DIR="${AGENTBOX_COLLIE_DIR:-/opt/collie}"
+
 # The image drops both of these on its last build step; overridable so the
-# test suite can point them somewhere writable.
+# test suite can point them somewhere writable. A third record sits beside
+# them, /usr/share/agentbox/collie-version, written by the Collie layer and
+# read by agentbox-collie prune — this script never touches it, but anything
+# that rearranges /usr/share/agentbox has to account for it.
 STAMP="${AGENTBOX_PERSIST_STAMP:-/usr/share/agentbox/build-stamp}"
 BASELINE="${AGENTBOX_PERSIST_BASELINE:-/usr/share/agentbox/apt-baseline}"
 
@@ -42,6 +50,13 @@ PRUNED=(
     /root/.cache
     /root/.npm
     /root/.bun
+    # Collie's scratch space for an update in flight. A failed update leaves
+    # it holding the whole partial download -- 123 MB, owned by whoever ran
+    # the update -- and saving that puts root-owned garbage in the state
+    # volume for the next boot to lay back down, where it fails the next
+    # update with EACCES. The prune removes it; this keeps the scan from
+    # walking into it in the first place.
+    "$COLLIE_DIR/.staging"
 )
 
 # Files that change on their own every boot. Persisting them would fight the
@@ -121,11 +136,16 @@ changed_files() {
 # and the copy already in the overlay gets the same rule -- otherwise a
 # release removed from /opt is laid back down at the next boot. This is the
 # one place the overlay is edited by anything other than save and forget, and
-# it is confined to what agentbox-collie prune knows about.
+# it is confined to what agentbox-collie prune knows about: releases under
+# /opt/collie/versions, and the `current` pointer beside them when the live
+# tree has just adopted a newer release the image shipped.
+#
+# The live tree goes first, and it has to: adoption happens there, and the
+# overlay pass would otherwise still be looking at the superseded pointer.
 prune_managed() {
     command -v agentbox-collie >/dev/null 2>&1 || return 0
     agentbox-collie prune >/dev/null 2>&1 || true
-    [ -d "$OVERLAY/opt/collie" ] && agentbox-collie prune "$OVERLAY/opt/collie" >/dev/null 2>&1 || true
+    [ -d "$OVERLAY$COLLIE_DIR" ] && agentbox-collie prune "$OVERLAY$COLLIE_DIR" >/dev/null 2>&1 || true
     return 0
 }
 
@@ -165,8 +185,8 @@ cmd_restore() {
     # A box stopped before its first periodic save may carry releases in the
     # overlay that /opt has already pruned. Prune the copy first, so they are
     # not laid back down only to be removed again a moment later.
-    [ -d "$OVERLAY/opt/collie" ] && command -v agentbox-collie >/dev/null 2>&1 \
-        && { agentbox-collie prune "$OVERLAY/opt/collie" >/dev/null 2>&1 || true; }
+    [ -d "$OVERLAY$COLLIE_DIR" ] && command -v agentbox-collie >/dev/null 2>&1 \
+        && { agentbox-collie prune "$OVERLAY$COLLIE_DIR" >/dev/null 2>&1 || true; }
 
     # Count the files, not the directories rsync walks through. Keep the two
     # steps apart: pipefail would turn an rsync warning into a count of zero.
