@@ -130,14 +130,16 @@ as_dev 'test -e ~/.npm/_npx/old' && pass "under the line, nothing was cleaned" |
 in_box 'test ! -e /var/lib/agentbox/log/clean.log' && pass "and no clean log exists" || fail "a clean log appeared under the line"
 in_box 'test -s /var/lib/agentbox/.disk' && pass "but the figures for the greeting were written" || fail "the watcher wrote no figures"
 
-# Over the line: a home of a few megabytes against a 1M threshold.
+# Over the line: a home of a few megabytes against a 1M threshold. The
+# watcher's first pass may run before the seed lands (the skel alone is over
+# 1M), so wait for the effect -- the old npx entry going away -- rather than
+# for the log, which that first pass already wrote.
 boot -e AGENTBOX_CLEAN_CHECK=3 -e AGENTBOX_CLEAN_AT=1M || { echo "the box did not boot over the line"; exit 1; }
 seed
-for _ in $(seq 40); do
-    in_box 'test -e /var/lib/agentbox/log/clean.log' 2>/dev/null && break
+for _ in $(seq 60); do
+    as_dev 'test ! -e ~/.npm/_npx/old' 2>/dev/null && break
     sleep 1
 done
-sleep 3
 in_box 'test -e /var/lib/agentbox/log/clean.log' && pass "over the line, the caches tier ran and logged" || fail "no clean log over the line"
 in_box 'grep -q "over 1 MB" /var/lib/agentbox/log/clean.log' && pass "and the log says why" || fail "the log does not name the trigger: $(in_box 'head -3 /var/lib/agentbox/log/clean.log')"
 as_dev 'test ! -e ~/.npm/_npx/old' && pass "and it cleaned the caches" || fail "the watcher did not clean"
