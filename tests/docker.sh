@@ -60,6 +60,12 @@ boot() {
 in_box() { docker exec "$NAME" bash -lc "$1"; }
 reset_box() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 
+# With isolation on, the daemon lives in a leaf of the docker/ group and its
+# containers become siblings of that leaf -- a group that held the daemon
+# itself could not delegate controllers to them, and every `docker run` would
+# fail. So the daemon's own cgroup is worth a line here.
+daemon_cgroup() { in_box 'sed s/^0::// /proc/$(cat /run/agentbox-dockerd.pid)/cgroup' 2>/dev/null || true; }
+
 # The engine arrives in the background, after the apt replay: sshd being up is
 # not the same thing as Docker being ready.
 wait_for_docker() {
@@ -139,9 +145,13 @@ if boot --privileged -e AGENTBOX_DOCKER=install; then
     if wait_for_docker; then
         pass "the daemon answers"
         in_box 'agentbox-dockerd status'
+        dcg="$(daemon_cgroup)"
+        [ "$dcg" = "/docker/daemon" ] \
+            && pass "the daemon sits in its own leaf ($dcg), so docker/ can delegate to containers" \
+            || fail "the daemon is in '$dcg', not /docker/daemon"
         in_box 'docker run --rm hello-world' >/dev/null 2>&1 \
             && pass "ran a container inside the box" \
-            || fail "the daemon is up but cannot run a container"
+            || fail "the daemon is up but cannot run a container: $(in_box 'docker run --rm hello-world 2>&1 | tail -3')"
         # Without sudo: the image puts dev in the docker group up front, so a
         # daemon appearing mid-session does not need a second login.
         docker exec -u dev "$NAME" docker ps >/dev/null 2>&1 \

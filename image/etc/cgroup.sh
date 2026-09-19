@@ -18,7 +18,10 @@
 #   work/     cpu.weight 100    memory.high <total - reserve>   pids.max
 #             everything born inside a herdr pane: agents, hooks, builds
 #   docker/   defaults
-#             dockerd, containerd and the cgroups dockerd makes for containers
+#     daemon/ dockerd and containerd (a leaf of their own, because dockerd
+#             creates its containers' cgroups as docker/<id> and may not
+#             delegate controllers from a group that holds a process)
+#     <id>/   the containers you run, made by dockerd
 #
 # Weights only matter under saturation: an idle control plane yields
 # everything. When the box is full, the agents are what slows down -- and the
@@ -186,7 +189,7 @@ protect() {
 
 undo_tree() {
     local g
-    for g in control work docker; do
+    for g in control work docker/daemon docker; do
         [ -d "$ROOT/$g" ] || continue
         # Give the processes back to the root before removing the group.
         while read -r pid; do
@@ -216,8 +219,11 @@ setup_cgroups() {
     local reason
     usable_tree || { reason="$ROOT is not a writable cgroup v2 tree"; give_up "$reason"; record "nice:$reason"; return 1; }
 
+    # cpu, memory and pids are what the split needs. io and cpuset are
+    # delegated too when the tree has them, so the Docker daemon inside can
+    # hand its containers the same controllers it would on a plain host.
     local enable="" c
-    for c in cpu memory pids; do
+    for c in cpu memory pids io cpuset; do
         offered "$c" && enable="$enable +$c"
     done
     if ! offered cpu; then
@@ -225,7 +231,10 @@ setup_cgroups() {
         give_up "$reason"; record "nice:$reason"; return 1
     fi
 
-    if ! mkdir -p "$ROOT/control" "$ROOT/work" "$ROOT/docker" 2>/dev/null; then
+    # docker/ gets a leaf for the daemon itself: dockerd creates its
+    # containers' cgroups under docker/<id> and enables controllers on docker/
+    # to do it, which the kernel refuses while docker/ holds a process.
+    if ! mkdir -p "$ROOT/control" "$ROOT/work" "$ROOT/docker/daemon" 2>/dev/null; then
         reason="could not create groups under $ROOT"
         give_up "$reason"; record "nice:$reason"; return 1
     fi
@@ -324,8 +333,10 @@ enter() {
 
     case "$(mode_in_effect)" in
         cgroup)
-            [ -d "$ROOT/$group" ] || return 1
-            echo "$pid" > "$ROOT/$group/cgroup.procs" 2>/dev/null ;;
+            local dest="$ROOT/$group"
+            [ "$group" = docker ] && dest="$ROOT/docker/daemon"
+            [ -d "$dest" ] || return 1
+            echo "$pid" > "$dest/cgroup.procs" 2>/dev/null ;;
         nice)
             # The nice-mode mirror of the same move: control raises, work and
             # docker sit at the default.
