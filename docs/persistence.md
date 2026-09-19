@@ -51,10 +51,17 @@ sit in the image for everyone, so the first boot installs it and the replay
 brings it back after that ([docker.md](docker.md)).
 
 **Files.** Anything under `/usr/local`, `/opt`, `/etc`, `/root` and `/srv`
-that is *newer than the image build stamp* is yours by definition — you put it
-there. It gets copied into the state volume (every 5 minutes, on a graceful
-stop, and whenever you ask) and rsynced back over the rootfs at boot, before
-sshd starts.
+that is *newer than the image build stamp* (`/usr/share/agentbox/build-stamp`,
+written on the last build step) is yours by definition — you put it there. It
+gets copied into the state volume (every 5 minutes, on a graceful stop, and
+whenever you ask) and rsynced back over the rootfs at boot, before sshd
+starts.
+
+`/usr/share/agentbox` holds two more records the runtime reads and nobody
+should hand-edit: `apt-baseline`, the packages the image shipped, and
+`collie-version`, the Collie release it installed — which is how the box
+tells a release the image brought from one staged inside a running container
+(see [collie.md](collie.md)).
 
 ```sh
 agentbox-persist status        # what is being kept right now
@@ -158,8 +165,25 @@ Collie cannot always remove (see [collie.md](collie.md)). Left alone, the
 overlay would carry every release ever installed and lay all of them back
 down at every boot. So before each save, and before a restore, the box prunes
 the Collie tree to the current release and its predecessor, in `/opt` and in
-the overlay's copy of it. That is the only path the overlay ever edits
-without a `save` or a `forget`, and it is confined to `/opt/collie/versions`.
+the overlay's copy of it.
+
+The same pass may also drop the overlay's `current` pointer — but only when
+the live tree has just adopted a newer release the image shipped, and only
+the pointer at the release that adoption superseded. Without that, a recreate
+between the adoption and the next save would restore the stale pointer and
+the box would need a second boot to settle; with it, the recreate simply
+finds no pointer in the saved layer and the image's own shows through, which
+is the same answer.
+
+That whole pass is the only path the overlay ever edits without a `save` or a
+`forget`, and it is confined to `/opt/collie`: the releases under `versions/`,
+and the `current` pointer beside them.
+
+One directory is never saved at all: `/opt/collie/.staging`, Collie's scratch
+space for an update in flight. A failed update leaves the whole partial
+download there, owned by whoever ran it, and keeping that in the state volume
+costs disk and makes the next update fail with `EACCES`. The scan skips it and
+the prune removes it.
 
 ### When the disk fills
 

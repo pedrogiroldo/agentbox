@@ -171,22 +171,48 @@ make update        # rebuild the image with the newest Collie
 collie update      # update in place, from inside the box
 ```
 
-The in-place update lands in `/opt/collie`, which the box's persistence contract
-captures, so it survives a recreate and keeps winning until the next image
-rebuild. That tree belongs to the box's user for exactly this reason: the
-update stages the next release beside the current one as the user the bridge
-runs as, and a root-owned `/opt/collie` fails it on the first `mkdir`. One
-wrinkle: herdr records the plugin by its resolved path, so after an in-place
-update the buttons still point at the previous version until the box restarts
-and re-links. The `collie` command itself is correct immediately.
+**The image is the floor.** An in-place update lands in `/opt/collie`, which the
+box's persistence contract captures, so it survives a recreate and keeps
+winning — until you deploy an image that ships a release newer than yours. Then
+the box adopts the image's, and says so once at boot:
 
-Each update stages the next release beside the current one and tries to move
-the old one into a trash directory. For the release the image shipped that
-fails — overlayfs cannot rename a directory out of the image layer — and
-Collie leaves it, and every later one, where it is. The box tidies up for it:
-at boot and before each periodic save it keeps the current release and the
-one before it, removes the rest, and drops them from the state volume as
-well. `agentbox-collie prune` runs it by hand.
+```
+[agentbox] adopted collie 1.10.2 from the image in /opt/collie, replacing 1.10.1 (keeping it for rollback)
+```
+
+From there the levers are the same two as always: update in place again for
+something newer, or pin `COLLIE_VERSION` and rebuild to move the floor itself.
+The release that was current stays on disk as the rollback.
+
+Adoption is not a nicety. `collie update` clears its destination by renaming
+the old release into a trash directory, and for the release the *image* ships
+that is a directory in the overlayfs lower layer — a rename Docker's mount
+options do not permit, so it fails with `EXDEV: cross-device link not
+permitted` on every single attempt. A box whose state volume pins an older
+pointer than the image carries can never update its way out; nothing but the
+box repointing `current` itself resolves it.
+
+Two things it deliberately does *not* adopt: a release newer than the image's
+that was staged inside the running box (an update caught between unpacking and
+flipping the link — not the box's to touch), and any release at all on an image
+built before this existed, which has no record of what it shipped and so
+adopts nothing.
+
+`/opt/collie` belongs to the box's user for a related reason: the update stages
+the next release beside the current one as the user the bridge runs as, and a
+root-owned tree fails it on the first `mkdir`. One wrinkle: herdr records the
+plugin by its resolved path, so after an in-place update the buttons still
+point at the previous version until the box restarts and re-links. The `collie`
+command itself is correct immediately.
+
+The releases pile up, because the same `EXDEV` stops Collie clearing any of
+them: it logs "harmless where it is" and never comes back. The box tidies up
+for it. At boot and before each periodic save it keeps the current release and
+the one before it, removes the rest, drops them from the state volume as well,
+and clears `.staging` — the partial download a failed update leaves behind,
+which is otherwise both wasted disk and, being owned by whoever ran the update,
+the thing that fails the *next* one with `EACCES`. `agentbox-collie prune` runs
+all of it by hand.
 
 To pin a version at build time, set `COLLIE_VERSION=v1.6.0` in `.env`. That also
 skips the GitHub API call the build otherwise makes to find the newest tag.

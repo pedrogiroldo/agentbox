@@ -6,7 +6,10 @@
 # deliberately dead. Almost every question here is about that gap:
 #
 #   1. the binary is there, linked, owned by the box's user so that it can
-#      update itself in place, and writable by nobody else
+#      update itself in place, and writable by nobody else -- and the box
+#      adopts a release the image ships that is newer than the pointer the
+#      state volume restored, which is the one thing `collie update` can
+#      never do for itself
 #   2. the herdr server is up before anyone logs in, and off when asked
 #   3. the plugin is linked into herdr -- which is also herdr enforcing
 #      Collie's own min_herdr_version, so a herdr that fell below Collie's
@@ -133,6 +136,130 @@ else
     fail "the overlay disagrees: $(in_box 'ls /var/lib/agentbox/overlay/opt/collie/versions 2>/dev/null | tr "\n" " "')"
 fi
 in_box 'rm -rf /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged /var/lib/agentbox/overlay/opt/collie/versions/0.2.0 /var/lib/agentbox/overlay/opt/collie/versions/99.0.0-staged' >/dev/null 2>&1 || true
+
+# The deadlock this all came from: the state volume pins `current` at a release
+# older than the one the image carries, and `collie update` can never fix it --
+# clearing its destination means renaming the image's copy aside, and overlayfs
+# answers EXDEV every time. The box adopts instead. Staged here the way a
+# restore leaves it: a plausible older release, current pointed at it, saved.
+RECORD=/usr/share/agentbox/collie-version
+if in_box "test -r $RECORD"; then
+    pass "the image wrote down which Collie release it shipped ($(in_box "cat $RECORD" 2>/dev/null))"
+else
+    fail "$RECORD is missing — the prune cannot tell an image release from a staged one"
+fi
+if [ "$(in_box "cat $RECORD" 2>/dev/null)" = "$current_rel" ]; then
+    pass "and it agrees with what current resolves to"
+else
+    fail "the record says $(in_box "cat $RECORD" 2>/dev/null), current resolves to $current_rel"
+fi
+
+fake_old() {
+    in_box "mkdir -p /opt/collie/versions/$1/bin \
+        && cp /opt/collie/versions/$current_rel/bin/collie /opt/collie/versions/$1/bin/collie \
+        && cp /opt/collie/versions/$current_rel/herdr-plugin.toml /opt/collie/versions/$1/ \
+        && echo x > /opt/collie/versions/$1/payload \
+        && chown -R dev:dev /opt/collie/versions/$1 \
+        && ln -sfn versions/$1 /opt/collie/current"
+}
+undo_fake() {
+    in_box "ln -sfn versions/$current_rel /opt/collie/current; rm -rf /opt/collie/versions/$1 \
+        /var/lib/agentbox/overlay/opt/collie/versions/$1 \
+        /var/lib/agentbox/overlay/opt/collie/current" >/dev/null 2>&1 || true
+}
+
+fake_old 0.9.0 >/dev/null 2>&1 || true
+# The stale pointer is written into the saved layer directly rather than by a
+# save: a save prunes first, so it would adopt on the spot and there would be
+# nothing left to test. This is the state a restore leaves behind.
+in_box 'install -d -m 0755 /var/lib/agentbox/overlay/opt/collie \
+    && ln -sfn versions/0.9.0 /var/lib/agentbox/overlay/opt/collie/current' >/dev/null 2>&1 || true
+if in_box 'test -L /var/lib/agentbox/overlay/opt/collie/current'; then
+    pass "the saved layer pins the older pointer, as a stuck box would"
+else
+    fail "could not stage the stale pointer in the overlay"
+fi
+adopt_out="$(in_box 'agentbox-collie prune' 2>&1 || true)"
+if [ "$(in_box 'basename "$(readlink -f /opt/collie/current)"')" = "$current_rel" ]; then
+    pass "the box adopted the release the image ships ($current_rel), unstuck with no operator action"
+else
+    fail "current is still $(in_box 'readlink /opt/collie/current'): $adopt_out"
+fi
+if [ "$(printf '%s\n' "$adopt_out" | grep -c "adopted collie $current_rel")" = 1 ]; then
+    pass "and said so in one line"
+else
+    fail "the adoption was silent or said twice: $adopt_out"
+fi
+if in_box 'test -d /opt/collie/versions/0.9.0'; then
+    pass "the superseded release stays for a rollback"
+else
+    fail "the release that was current was removed rather than kept"
+fi
+if in_box 'test ! -e /var/lib/agentbox/overlay/opt/collie/current'; then
+    pass "and the stale pointer is gone from the saved layer, so a recreate cannot re-pin it"
+else
+    fail "the overlay still pins $(in_box 'readlink /var/lib/agentbox/overlay/opt/collie/current' 2>/dev/null)"
+fi
+# herdr records a plugin by its resolved path, which is why the entrypoint
+# prunes before it links. Re-link the way the entrypoint does and check where
+# it landed.
+as_dev "herdr plugin link /opt/collie/current" >/dev/null 2>&1 || true
+if as_dev 'herdr plugin list' 2>/dev/null | grep -q "versions/$current_rel"; then
+    pass "herdr resolves the plugin to the adopted tree, not the superseded one"
+elif as_dev 'herdr plugin list' 2>/dev/null | grep -q '0\.9\.0'; then
+    fail "herdr still points at the superseded release — the link ran before the prune"
+else
+    skip "herdr plugin list does not print resolved paths; ordering checked by the entrypoint comment only"
+fi
+undo_fake 0.9.0
+
+# A record the tree cannot honour must refuse, not point `current` at a tree
+# with no working collie in it.
+in_box "mkdir -p /opt/collie/versions/99.0.0/bin && cp /opt/collie/versions/$current_rel/bin/collie /opt/collie/versions/99.0.0/bin/collie && printf '99.0.0\n' > $RECORD" >/dev/null 2>&1 || true
+refuse_out="$(in_box 'agentbox-collie prune' 2>&1 || true)"
+if [ "$(in_box 'basename "$(readlink -f /opt/collie/current)"')" = "$current_rel" ]; then
+    pass "a record naming a gutted release is refused, not adopted"
+else
+    fail "adopted a release with no herdr-plugin.toml: $refuse_out"
+fi
+if printf '%s' "$refuse_out" | grep -q 'not adopting collie 99.0.0'; then
+    pass "and the refusal says which release and why"
+else
+    fail "the refusal was silent: $refuse_out"
+fi
+if in_box 'test -d /opt/collie/versions/99.0.0'; then
+    pass "the tree it refused is left intact"
+else
+    fail "the refused tree was removed"
+fi
+
+# Same shape, opposite provenance: a usable release newer than current that the
+# record does *not* name is an update caught mid-flight, and is not ours.
+in_box "cp /opt/collie/versions/$current_rel/herdr-plugin.toml /opt/collie/versions/99.0.0/ && printf '%s\n' '$current_rel' > $RECORD" >/dev/null 2>&1 || true
+staged_out="$(in_box 'agentbox-collie prune' 2>&1 || true)"
+if [ "$(in_box 'basename "$(readlink -f /opt/collie/current)"')" = "$current_rel" ] \
+   && in_box 'test -d /opt/collie/versions/99.0.0'; then
+    pass "a release staged since boot is left exactly where it is"
+else
+    fail "the staged release was adopted or removed: $staged_out"
+fi
+in_box 'rm -rf /opt/collie/versions/99.0.0 /var/lib/agentbox/overlay/opt/collie/versions/99.0.0' >/dev/null 2>&1 || true
+
+# A failed update leaves its partial download behind, owned by whoever ran it.
+# 123 MB on the box this was found on, copied into the state volume by the next
+# save, and root-owned there -- so the *next* update failed with EACCES.
+in_box 'mkdir -p /opt/collie/.staging/dl && head -c 200000 /dev/urandom > /opt/collie/.staging/dl/part && chown -R root:root /opt/collie/.staging' >/dev/null 2>&1 || true
+in_box 'agentbox-persist save' >/dev/null 2>&1 || true
+if in_box 'test ! -e /opt/collie/.staging'; then
+    pass "the prune clears a root-owned staging directory"
+else
+    fail "/opt/collie/.staging survived: $(in_box 'ls -la /opt/collie/.staging' 2>&1 | head -3)"
+fi
+if in_box 'test ! -e /var/lib/agentbox/overlay/opt/collie/.staging'; then
+    pass "and no part of it reaches the state volume"
+else
+    fail "the overlay carries a staging directory: $(in_box 'find /var/lib/agentbox/overlay/opt/collie/.staging' 2>&1 | head -3)"
+fi
 
 # ---------------------------------------------------------------------------
 step "2. The herdr server is up before anyone logs in"

@@ -28,8 +28,10 @@
 #   stop    hand off to `collie stop`
 #   status  what the box is doing about Collie, if anything
 #   prune   remove the releases an in-place update left behind (keeps the
-#           current one and its predecessor); [dir] prunes another copy of
-#           the tree, which is how the state volume gets the same treatment
+#           current one and its predecessor), adopt a release the image ships
+#           that is newer than the current pointer, and clear the scratch
+#           space a failed update left; [dir] prunes another copy of the tree,
+#           which is how the state volume gets the same treatment
 #
 # start/stop delegate rather than launching the bridge themselves, because
 # herdr's own Collie buttons call Collie's control script. Two managers with two
@@ -245,6 +247,33 @@ status() {
     return 1
 }
 
+# Where the image writes the Collie release it installed. The prune reads it
+# to tell a release the image brought from one a running box staged, which is
+# the difference between "adopt this" and "leave it alone". Overridable so the
+# test suite can point it at a fixture.
+IMAGE_VERSION_FILE="${AGENTBOX_COLLIE_IMAGE_VERSION:-/usr/share/agentbox/collie-version}"
+OVERLAY_ROOT="${AGENTBOX_PERSIST_DIR:-/var/lib/agentbox}/overlay"
+
+# The tree the version record describes. Adoption is about the live install
+# only: the state volume's copy is pruned with the same code, but the image's
+# release was never copied into it, so asking it to adopt would refuse once
+# per pass and say so in the log for no reason. Overridable for the tests.
+LIVE_BASE="${AGENTBOX_COLLIE_DIR:-/opt/collie}"
+
+# Is $1 strictly newer than $2, by version sort? `sort -V` decides, so the
+# comparison matches the ordering the prune already uses everywhere else.
+newer_than() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
+}
+
+# A release tree is usable if the two paths this box resolves through are
+# there: /usr/local/bin/collie points into bin/collie, and `herdr plugin link`
+# wants the manifest. Adopting a tree missing either leaves the box with no
+# working `collie` command at all, which is worse than the stale pointer.
+usable_release() {
+    [ -x "$1/bin/collie" ] && [ -e "$1/herdr-plugin.toml" ]
+}
+
 # Old releases. `collie update` stages the next release beside the current one
 # and moves the old one into .trash with rename(2). The release the image
 # shipped is a directory in the overlayfs lower layer, and renaming one of
@@ -257,14 +286,29 @@ status() {
 #
 # rm -rf works where rename does not: overlayfs covers a removal with a
 # whiteout. Keep the release `current` points at and the newest one older
-# than it (a rollback costs 84 MB), leave anything *newer* than current alone
-# (an update caught between staging and flipping the link), and remove the
-# rest. Refuse on a layout that is not the installer's, and say so once.
+# than it (a rollback costs 84 MB) and remove the rest. Refuse on a layout
+# that is not the installer's, and say so once.
+#
+# A release *newer* than current is one of two things, and they get opposite
+# treatment:
+#
+#   the image's   the pointer in the state volume is older than what this
+#                 image ships. Collie can never resolve that itself -- its
+#                 updater has to rename the image's copy aside and overlayfs
+#                 returns EXDEV -- so it deadlocks on every attempt. The box
+#                 adopts instead: repoint current, and drop the superseded
+#                 pointer from the saved layer so a recreate does not put it
+#                 back. The version record says which release is the image's.
+#   staged here   an update caught between unpacking and flipping the link.
+#                 Not ours to touch, exactly as before.
+#
+# With no version record -- a box running an image built before this existed
+# -- nothing is the image's, so nothing is adopted and nothing is said.
 #
 # The optional argument is the tree to prune; agentbox-persist passes its own
 # copy of /opt/collie, so the state volume gets the same treatment.
 prune() {
-    local base="${1:-/opt/collie}" versions cur cur_name
+    local base="${1:-$LIVE_BASE}" versions cur cur_name
     versions="$base/versions"
     [ -d "$versions" ] || return 0
 
@@ -275,9 +319,19 @@ prune() {
     esac
     [ -d "$versions/$cur_name" ] || { log "not pruning $base: current points at a missing release ($cur_name)"; return 0; }
 
+    # Adoption comes first: it decides which release `current` names, and
+    # everything below splits the list on that name. Not a command
+    # substitution -- that is a subshell, and it would swallow the line the
+    # adoption logs into the variable instead of printing it.
+    adopt_image_release "$base" "$versions" "$cur_name"
+    cur_name="$CURRENT_RELEASE"
+
     # Oldest first, by version. `current` splits the list: everything after it
-    # was staged more recently and is not ours to touch.
-    local -a all older
+    # was staged more recently and is not ours to touch. Both initialised:
+    # under `set -u` a declared-but-never-assigned array makes ${#older[@]}
+    # below a fatal unbound reference, which is reachable whenever current is
+    # the oldest release and something else is doomed.
+    local -a all=() older=()
     mapfile -t all < <(find "$versions" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V)
     local v seen=0
     for v in "${all[@]}"; do
@@ -290,19 +344,89 @@ prune() {
         doomed=("${older[@]:0:${#older[@]}-1}")
     fi
     [ -d "$base/.trash" ] && [ -n "$(ls -A "$base/.trash" 2>/dev/null)" ] && doomed+=(".trash")
+    # .staging is Collie's scratch space for a download in flight. It means
+    # nothing between runs, and a failed update leaves it full -- 123 MB on
+    # the box this was found on, root-owned, which then fails the *next*
+    # update with EACCES. This runs as root, so whose it is does not matter.
+    [ -d "$base/.staging" ] && doomed+=(".staging")
 
     [ "${#doomed[@]}" -gt 0 ] || return 0
 
-    local size removed=()
+    local removed=()
     for v in "${doomed[@]}"; do
-        if [ "$v" = ".trash" ]; then
-            rm -rf -- "$base/.trash" 2>/dev/null && removed+=("$v")
-        else
-            rm -rf -- "${versions:?}/$v" 2>/dev/null && removed+=("$v")
-        fi
+        case "$v" in
+            .trash|.staging) rm -rf -- "$base/$v" 2>/dev/null && removed+=("$v") ;;
+            *) rm -rf -- "${versions:?}/$v" 2>/dev/null && removed+=("$v") ;;
+        esac
     done
     [ "${#removed[@]}" -gt 0 ] || return 0
     log "pruned ${#removed[@]} old collie release(s) from $base: ${removed[*]} (keeping $cur_name${older[*]:+ and ${older[-1]}})"
+    return 0
+}
+
+# Point `current` at the release the image ships, when that is newer than the
+# one it points at now. Leaves CURRENT_RELEASE holding the release name
+# `current` carries afterwards -- the adopted one, or the one it came in with
+# -- because the caller splits the version list on it. A global rather than a
+# printed value on purpose: this function logs, and a command substitution
+# would capture those lines instead of showing them.
+#
+# Nothing here touches a release the image did not ship: the record names one
+# version, and anything else newer than current is an update staged since boot.
+adopt_image_release() {
+    local base="$1" versions="$2" cur_name="$3" shipped
+    CURRENT_RELEASE="$cur_name"
+
+    [ "$base" = "$LIVE_BASE" ] || return 0
+    [ -r "$IMAGE_VERSION_FILE" ] || return 0
+    read -r shipped < "$IMAGE_VERSION_FILE" 2>/dev/null || return 0
+    [ -n "$shipped" ] || return 0
+    newer_than "$shipped" "$cur_name" || return 0
+
+    if [ ! -d "$versions/$shipped" ]; then
+        log "not adopting collie $shipped in $base: the image records it but $versions/$shipped is not there"
+        return 0
+    fi
+    if ! usable_release "$versions/$shipped"; then
+        log "not adopting collie $shipped in $base: that release tree has no executable bin/collie or no herdr-plugin.toml"
+        return 0
+    fi
+
+    ln -sfn "versions/$shipped" "$base/current.adopting" 2>/dev/null \
+        && mv -Tf "$base/current.adopting" "$base/current" 2>/dev/null || {
+        rm -f "$base/current.adopting" 2>/dev/null
+        log "could not adopt collie $shipped in $base: 'current' would not move"
+        return 0
+    }
+
+    # The live flip alone settles only once a save has run. A recreate before
+    # that would restore the saved pointer at the old release and need a
+    # second boot to come right, so the stale pointer goes now. A recreate
+    # then finds no pointer in the saved layer and the image's own shows
+    # through -- the same answer. This widens the prune's existing exception
+    # (the one path that edits the overlay outside save and forget) from
+    # versions/ to the pointer beside it, and no further.
+    drop_superseded_overlay_pointer "$cur_name"
+
+    log "adopted collie $shipped from the image in $base, replacing $cur_name (keeping it for rollback)"
+    CURRENT_RELEASE="$shipped"
+    return 0
+}
+
+# Remove the overlay's `current` when it still pins the release just
+# superseded. Only ever called from the live tree's adoption, and only ever
+# removes a pointer -- never a release.
+drop_superseded_overlay_pointer() {
+    local superseded="$1" overlay_ptr="$OVERLAY_ROOT/opt/collie/current" target
+
+    [ -L "$overlay_ptr" ] || return 0
+    target="$(readlink "$overlay_ptr" 2>/dev/null)" || return 0
+    # Relative ("versions/1.10.1") or absolute, both end in the release name;
+    # a bare name is covered too. Anything else is a pointer at some other
+    # release and is not this adoption's business.
+    case "$target" in
+        *"/$superseded"|"$superseded") rm -f "$overlay_ptr" 2>/dev/null ;;
+    esac
     return 0
 }
 

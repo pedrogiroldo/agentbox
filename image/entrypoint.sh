@@ -294,6 +294,12 @@ if [ -e /opt/collie/current/herdr-plugin.toml ]; then
     # An in-place update leaves the release it replaced behind, and the one
     # before that, and so on: Collie cannot rename a directory out of the image
     # layer and stops trying. Keep the current release and one predecessor.
+    #
+    # Before the link, and that order is load-bearing now: this is also where
+    # the box adopts a release the image ships that is newer than the pointer
+    # the state volume just restored, and herdr records a plugin by its
+    # resolved path. Link first and the phone's buttons would point at the
+    # superseded tree until the boot after.
     agentbox-collie prune || warn "could not prune old collie releases"
     if agentbox-herdr status >/dev/null 2>&1; then
         as_user herdr plugin link /opt/collie/current >/dev/null 2>&1 \
