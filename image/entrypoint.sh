@@ -357,8 +357,10 @@ fi
 # the caches tier -- the one that breaks nothing -- on its own once the home
 # passes AGENTBOX_CLEAN_AT or the disk under it runs low. Housekeeping, so it
 # is workload, not control plane. docs/small-vps.md.
+# $BASHPID, not $$: inside a subshell $$ is still this script's pid, and
+# moving *that* into work/ would drag sshd, started a few lines down, with it.
 (
-    agentbox-cgroup enter work $$ >/dev/null 2>&1 || true
+    agentbox-cgroup enter work "$BASHPID" >/dev/null 2>&1 || true
     exec agentbox-clean watch
 ) &
 
