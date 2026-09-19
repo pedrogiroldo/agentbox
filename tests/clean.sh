@@ -102,9 +102,11 @@ printf '%s' "$out" | grep -q '^freed' && pass "reports what it freed" || fail "n
 step "3. browsers: separate, and names the reinstall"
 out="$(as_dev 'agentbox-clean browsers' 2>&1 || true)"
 as_dev 'test ! -e ~/.cache/ms-playwright' && pass "browsers removed" || fail "browsers survived"
-report="$(as_dev 'agentbox-clean' 2>&1 || true)"
 as_dev 'mkdir -p ~/.cache/ms-playwright/x && dd if=/dev/urandom of=~/.cache/ms-playwright/x/b bs=1M count=1 status=none'
-as_dev 'agentbox-clean' 2>&1 | grep -q 'playwright install' && pass "the report names the reinstall command" || fail "no reinstall hint"
+# Captured, not piped into grep -q: under pipefail the report keeps writing
+# after the match, takes SIGPIPE, and the pipeline reports a failure.
+report="$(as_dev 'agentbox-clean' 2>&1 || true)"
+printf '%s' "$report" | grep -q 'playwright install' && pass "the report names the reinstall command" || fail "no reinstall hint: $(printf '%s' "$report" | grep -i playwright)"
 
 step "4. the greeting says so only above the threshold"
 in_box "printf '%s %s\n' $((25 * 1048576)) $((9 * 1048576)) > /var/lib/agentbox/.disk && chmod 644 /var/lib/agentbox/.disk"

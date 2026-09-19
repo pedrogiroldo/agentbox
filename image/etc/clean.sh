@@ -212,7 +212,8 @@ reclaim() {
     case "$method" in
         tool:*)
             local cmd="${method#tool:}" tool="${method#tool:}"; tool="${tool%% *}"
-            if ! as_user command -v "$tool" >/dev/null 2>&1; then
+            # Through a shell: `command` is a builtin, and as_user runs env.
+            if ! as_user sh -c 'command -v "$1" >/dev/null 2>&1' _ "$tool"; then
                 printf '  %-44s %s\n' "$label" "skipped: $tool is not installed"
                 return 0
             fi
