@@ -347,18 +347,27 @@ prune() {
     # .staging is Collie's scratch space for a download in flight. It means
     # nothing between runs, and a failed update leaves it full -- 123 MB on
     # the box this was found on, root-owned, which then fails the *next*
-    # update with EACCES. This runs as root, so whose it is does not matter.
+    # update with EACCES. At boot and from `save` this runs as root, so whose
+    # it is does not matter there; a by-hand run that cannot unlink it says so
+    # below rather than passing over it in silence.
     [ -d "$base/.staging" ] && doomed+=(".staging")
 
     [ "${#doomed[@]}" -gt 0 ] || return 0
 
-    local removed=()
+    local removed=() refused=()
     for v in "${doomed[@]}"; do
         case "$v" in
-            .trash|.staging) rm -rf -- "$base/$v" 2>/dev/null && removed+=("$v") ;;
-            *) rm -rf -- "${versions:?}/$v" 2>/dev/null && removed+=("$v") ;;
+            .trash|.staging) rm -rf -- "$base/$v" 2>/dev/null && removed+=("$v") || refused+=("$v") ;;
+            *) rm -rf -- "${versions:?}/$v" 2>/dev/null && removed+=("$v") || refused+=("$v") ;;
         esac
     done
+    # Every removal above is silenced, and a refusal leaves `removed` empty --
+    # so without this the run prints nothing at all and still exits 0, and the
+    # entrypoint's `|| warn` never fires. The case that reaches it is the
+    # documented by-hand one: `agentbox-collie prune` as the box's user, against
+    # the root-owned .staging a restore laid back down. Say so instead.
+    [ "${#refused[@]}" -eq 0 ] \
+        || warn "could not remove from $base: ${refused[*]} — not yours to unlink? try sudo"
     [ "${#removed[@]}" -gt 0 ] || return 0
     log "pruned ${#removed[@]} old collie release(s) from $base: ${removed[*]} (keeping $cur_name${older[*]:+ and ${older[-1]}})"
     return 0
@@ -374,12 +383,15 @@ prune() {
 # Nothing here touches a release the image did not ship: the record names one
 # version, and anything else newer than current is an update staged since boot.
 adopt_image_release() {
-    local base="$1" versions="$2" cur_name="$3" shipped
+    local base="$1" versions="$2" cur_name="$3" shipped=""
     CURRENT_RELEASE="$cur_name"
 
     [ "$base" = "$LIVE_BASE" ] || return 0
     [ -r "$IMAGE_VERSION_FILE" ] || return 0
-    read -r shipped < "$IMAGE_VERSION_FILE" 2>/dev/null || return 0
+    # `read` returns 1 at EOF even when it assigned: a record written without a
+    # trailing newline holds a whole version, and bailing on that exit status
+    # would skip the adoption silently. Emptiness is the test that matters.
+    read -r shipped < "$IMAGE_VERSION_FILE" 2>/dev/null || true
     [ -n "$shipped" ] || return 0
     newer_than "$shipped" "$cur_name" || return 0
 
@@ -417,7 +429,10 @@ adopt_image_release() {
 # superseded. Only ever called from the live tree's adoption, and only ever
 # removes a pointer -- never a release.
 drop_superseded_overlay_pointer() {
-    local superseded="$1" overlay_ptr="$OVERLAY_ROOT/opt/collie/current" target
+    # Mirrored under the overlay at the tree's own absolute path, so the
+    # knob that moves the live tree moves this with it rather than leaving
+    # adoption editing /opt/collie's pointer on a box configured elsewhere.
+    local superseded="$1" overlay_ptr="$OVERLAY_ROOT$LIVE_BASE/current" target
 
     [ -L "$overlay_ptr" ] || return 0
     target="$(readlink "$overlay_ptr" 2>/dev/null)" || return 0

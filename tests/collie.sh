@@ -261,6 +261,29 @@ else
     fail "the overlay carries a staging directory: $(in_box 'find /var/lib/agentbox/overlay/opt/collie/.staging' 2>&1 | head -3)"
 fi
 
+# The by-hand path docs/collie.md gives is `sudo agentbox-collie prune`, and the
+# sudo is load-bearing: a restore lays .staging back down root-owned, and the
+# box's own user cannot unlink what is inside it. Every removal in the prune is
+# silenced, so the run has to say what it could not do -- otherwise it prints
+# nothing, exits 0, and the 123 MB is still there.
+# 0755 explicitly: the shell these run under has a permissive umask, and a
+# world-writable .staging is one dev can unlink after all, which would test
+# nothing. A real one is made with the updater's own umask.
+in_box 'mkdir -p /opt/collie/.staging/dl && echo x > /opt/collie/.staging/dl/part \
+    && chown -R root:root /opt/collie/.staging && chmod -R 755 /opt/collie/.staging' >/dev/null 2>&1 || true
+unpriv_out="$(as_dev 'agentbox-collie prune' 2>&1 || true)"
+if printf '%s' "$unpriv_out" | grep -q 'could not remove'; then
+    pass "an unprivileged prune names what it could not unlink instead of exiting quietly"
+else
+    fail "the unprivileged prune was silent: ${unpriv_out:-<no output>}"
+fi
+if in_box 'test -e /opt/collie/.staging' && in_box 'agentbox-collie prune' >/dev/null 2>&1 && in_box 'test ! -e /opt/collie/.staging'; then
+    pass "and the same command as root clears it"
+else
+    fail "the root prune did not clear the staging directory it warned about"
+fi
+in_box 'rm -rf /opt/collie/.staging' >/dev/null 2>&1 || true
+
 # ---------------------------------------------------------------------------
 step "2. The herdr server is up before anyone logs in"
 # ---------------------------------------------------------------------------

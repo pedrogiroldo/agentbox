@@ -24,6 +24,11 @@ PKG_LIST="$APT_DIR/packages"
 LOG_DIR="$STATE_ROOT/log"
 LOCK="$STATE_ROOT/.lock"
 
+# Where the Collie release trees live. The same knob agentbox-collie reads, so
+# the two never disagree about where the tree is -- including the copy of it
+# under the overlay, which is mirrored at the tree's own absolute path.
+COLLIE_DIR="${AGENTBOX_COLLIE_DIR:-/opt/collie}"
+
 # The image drops both of these on its last build step; overridable so the
 # test suite can point them somewhere writable. A third record sits beside
 # them, /usr/share/agentbox/collie-version, written by the Collie layer and
@@ -50,9 +55,8 @@ PRUNED=(
     # the update -- and saving that puts root-owned garbage in the state
     # volume for the next boot to lay back down, where it fails the next
     # update with EACCES. The prune removes it; this keeps the scan from
-    # walking into it in the first place. Same knob agentbox-collie reads, so
-    # the two never disagree about where the tree is.
-    "${AGENTBOX_COLLIE_DIR:-/opt/collie}/.staging"
+    # walking into it in the first place.
+    "$COLLIE_DIR/.staging"
 )
 
 # Files that change on their own every boot. Persisting them would fight the
@@ -141,7 +145,7 @@ changed_files() {
 prune_managed() {
     command -v agentbox-collie >/dev/null 2>&1 || return 0
     agentbox-collie prune >/dev/null 2>&1 || true
-    [ -d "$OVERLAY/opt/collie" ] && agentbox-collie prune "$OVERLAY/opt/collie" >/dev/null 2>&1 || true
+    [ -d "$OVERLAY$COLLIE_DIR" ] && agentbox-collie prune "$OVERLAY$COLLIE_DIR" >/dev/null 2>&1 || true
     return 0
 }
 

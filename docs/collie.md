@@ -211,8 +211,9 @@ for it. At boot and before each periodic save it keeps the current release and
 the one before it, removes the rest, drops them from the state volume as well,
 and clears `.staging` — the partial download a failed update leaves behind,
 which is otherwise both wasted disk and, being owned by whoever ran the update,
-the thing that fails the *next* one with `EACCES`. `agentbox-collie prune` runs
-all of it by hand.
+the thing that fails the *next* one with `EACCES`. `sudo agentbox-collie prune`
+runs all of it by hand — with `sudo`, because a restore lays `.staging` back
+down root-owned and an unprivileged run cannot unlink it (it will tell you).
 
 To pin a version at build time, set `COLLIE_VERSION=v1.6.0` in `.env`. That also
 skips the GitHub API call the build otherwise makes to find the newest tag.
