@@ -75,10 +75,20 @@ seed() {
 step "1. the report deletes nothing"
 boot || { echo "the box did not boot"; docker logs "$NAME" | tail -30; exit 1; }
 seed
-before="$(as_dev 'find ~ | wc -l')"
+# "Deletes nothing" is a claim about deletion, so compare the paths rather
+# than count them. The box is still finishing its boot while this runs --
+# `sshd is listening` is the only signal boot() waits for, and the background
+# chain keeps writing into the home for a few seconds after it -- so a file
+# that appeared is not a file this verb removed. Comparing sets also names
+# what went missing, on the day something does.
+snapshot() { as_dev 'find ~ 2>/dev/null | LC_ALL=C sort'; }
+before="$(snapshot)"
 report="$(as_dev 'agentbox-clean' 2>&1 || true)"
-after="$(as_dev 'find ~ | wc -l')"
-[ "$before" = "$after" ] && pass "file count unchanged ($before)" || fail "the report changed the file count: $before -> $after"
+after="$(snapshot)"
+gone="$(LC_ALL=C comm -23 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -5)"
+[ -z "$gone" ] \
+    && pass "the report deleted nothing ($(printf '%s\n' "$before" | wc -l) paths)" \
+    || fail "the report removed: $(printf '%s' "$gone" | tr '\n' ' ')"
 printf '%s' "$report" | grep -q 'npm content store' && pass "lists the npm store" || fail "no npm store in the report"
 printf '%s' "$report" | grep -q 'superseded plugin versions' && pass "lists superseded plugin versions" || fail "no plugin line in the report"
 printf '%s' "$report" | grep -q 'never touched' && pass "has a section for what is yours" || fail "no 'yours' section"
