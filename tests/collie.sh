@@ -118,7 +118,8 @@ fi
 # current release and one predecessor, at boot and before each save, and
 # leaves anything staged newer than current alone.
 current_rel="$(in_box 'basename "$(readlink -f /opt/collie/current)"')"
-in_box 'mkdir -p /opt/collie/versions/0.1.0 /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged /opt/collie/.trash/x && chown -R dev:dev /opt/collie/versions/0.1.0 /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged'
+# A file in each, because the persist scan copies files, not empty directories.
+in_box 'for v in 0.1.0 0.2.0 99.0.0-staged; do mkdir -p /opt/collie/versions/$v && echo x > /opt/collie/versions/$v/x; done && mkdir -p /opt/collie/.trash/x && chown -R dev:dev /opt/collie/versions/0.1.0 /opt/collie/versions/0.2.0 /opt/collie/versions/99.0.0-staged'
 in_box 'agentbox-persist save' >/dev/null 2>&1 || true
 left="$(in_box 'ls /opt/collie/versions | sort -V | tr "\n" " "')"
 if in_box 'test ! -e /opt/collie/versions/0.1.0 && test -e /opt/collie/versions/0.2.0 && test -e /opt/collie/versions/99.0.0-staged && test ! -e /opt/collie/.trash'; then
